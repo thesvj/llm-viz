@@ -21,6 +21,7 @@ import { KeyboardManagerContext, KeyboardOrder, useGlobalKeyboard } from '@/src/
 import { Resizer } from '../utils/Resizer';
 import { ModelSelectorToolbar } from './components/ModelSelectorToolbar';
 import { ViewPanel } from './components/ViewPanel';
+import { explainCell } from './CellExplain';
 
 async function fetchTensorData(url: string): Promise<ITensorSet> {
     let resp = await fetch(url);
@@ -241,6 +242,10 @@ class CanvasRender {
 
     constructor(canvasEl: HTMLCanvasElement, private canvasData: ICanvasData, fontAtlasData: IFontAtlasData) {
         this.progState = initProgramState(canvasEl, fontAtlasData);
+        if (process.env.NODE_ENV === 'development') {
+            // debug handle for in-browser checks (dev builds only)
+            (window as any).__llmviz = { state: this.progState, explainCell };
+        }
         this.progState.markDirty = this.markDirty;
         this.progState.walkthrough.markDirty = this.markDirty;
         this.renderState = this.progState.render;

@@ -2,6 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 import { useProgramState } from '../Sidebar';
 import { IVizSettings } from '../VizSettings';
+import { Inspector, getInspectTarget } from './Inspector';
 
 function fmt(v: number) {
     let a = Math.abs(v);
@@ -28,11 +29,11 @@ export const ViewPanel: React.FC = () => {
             onClick={() => set(k, value)}>{label}</button>;
     }
 
-    let hover = state.display.hoverTarget;
-    let blk = hover?.mainCube;
+    let blk = getInspectTarget(state)?.blk;
     let range = blk?.access?.range;
 
-    return <div className='absolute top-0 right-0 m-3 w-[17rem] bg-white/95 rounded-lg shadow border border-gray-200 text-sm select-none'>
+    return <div className='absolute top-0 right-0 m-3 w-[19rem] flex flex-col gap-2 pointer-events-none'>
+    <div className='bg-white/95 rounded-lg shadow border border-gray-200 text-sm select-none pointer-events-auto'>
         <div className='px-3 py-2 border-b border-gray-100 font-semibold text-gray-800'>View</div>
         <div className='px-3 py-2 flex flex-col gap-1.5'>
             <div className='flex items-center justify-between'>
@@ -72,5 +73,7 @@ export const ViewPanel: React.FC = () => {
                     : 'Hover a block to see its value range.'}
             </div>
         </div>
+    </div>
+    <Inspector />
     </div>;
 };

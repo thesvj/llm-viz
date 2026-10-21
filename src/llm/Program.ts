@@ -73,6 +73,7 @@ export interface IDisplayState {
     topOutputOpacity?: number;
     lines: string[];
     hoverTarget: IHoverTarget | null;
+    pinned: { cubeIdx: number, idx: Vec3 } | null; // cell pinned by a click (inspector + data flow stay on it)
     blkIdxHover: number[] | null;
     dimHover: DimStyle | null;
 }
@@ -212,6 +213,7 @@ export function initProgramState(canvasEl: HTMLCanvasElement, fontAtlasData: IFo
             tokenOutputColors: null,
             lines: [],
             hoverTarget: null,
+            pinned: null,
             dimHover: null,
             blkIdxHover: null,
         },
@@ -298,7 +300,8 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     runMouseHitTesting(state);
     if (state.viz.focus) {
         let hover = state.display.hoverTarget as IHoverTarget | null; // set by runMouseHitTesting
-        applyFocus(state.layout, hover?.mainCube ?? null);
+        let pinnedCube = state.display.pinned ? state.layout.cubes[state.display.pinned.cubeIdx] ?? null : null;
+        applyFocus(state.layout, hover?.mainCube ?? pinnedCube);
     }
     state.render.sharedRender.activePhase = RenderPhase.Opaque;
     if (state.layout.kind === 'gpt2') {

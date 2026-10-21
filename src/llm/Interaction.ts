@@ -103,6 +103,14 @@ export function runMouseHitTesting(state: IProgramState) {
         highlightCellUnderMouse(state, main, c, pt2);
         drawDependences(state, main, ptIdx);
         drawDataFlow(state, main, ptIdx);
+    } else if (state.display.pinned && state.layout.cubes[state.display.pinned.cubeIdx]) {
+        // nothing under the mouse: keep showing the pinned cell
+        let main = state.layout.cubes[state.display.pinned.cubeIdx];
+        let idx = state.display.pinned.idx;
+        blockDimension(state, state.layout, main, Dim.X, main.dimX, 1.0);
+        blockDimension(state, state.layout, main, Dim.Y, main.dimY, 1.0);
+        drawDependences(state, main, idx);
+        drawDataFlow(state, main, idx);
     } else if (isNotNil(state.display.blkIdxHover)) {
         for (let idx of state.display.blkIdxHover) {
             let mainBlk = state.layout.cubes[idx];

@@ -87,7 +87,21 @@ export const CanvasEventSurface: React.FC<{
             ev.preventDefault();
     });
 
+    let downPos = React.useRef<{ x: number, y: number } | null>(null);
+
+    // a click without dragging pins the cell under the mouse (or unpins, on empty space)
+    function handleClick(ev: React.MouseEvent) {
+        let d = downPos.current;
+        if (!progState || !d || Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 4) {
+            return;
+        }
+        let hover = progState.display.hoverTarget;
+        progState.display.pinned = hover ? { cubeIdx: hover.mainCube.idx, idx: hover.mainIdx } : null;
+        progState.markDirty();
+    }
+
     function handleMouseDown(ev: React.MouseEvent) {
+        downPos.current = { x: ev.clientX, y: ev.clientY };
         if (progState) {
             setDragStart(ev, { camAngle: progState.camera.angle, camTarget: progState.camera.center });
         }
@@ -122,6 +136,7 @@ export const CanvasEventSurface: React.FC<{
         ref={setEventSurfaceEl}
         className={s.canvasEventSurface}
         onMouseDown={handleMouseDown}
+        onClick={handleClick}
         onMouseMove={handleMouseMove}
         onWheel={handleWheel}
         onContextMenu={ev => ev.preventDefault()}

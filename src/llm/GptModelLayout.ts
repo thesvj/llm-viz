@@ -560,6 +560,7 @@ export function genGptModelLayout(shape: IModelShape, gptGpuModel: IGptModelLink
         let vOutCombined = mk({
             t: 'i', cx: T, cz: B, cy: C, y: vOutY,
             xR: attnLeftX, zF: - headWidth * nHeads / 2,
+            access: { src: attnTarget?.scaledVectors, x: [0, 1, 0], y: [1, 0, T] }, // all heads side by side
             dimX: DimStyle.T, dimY: DimStyle.C,
             hidden: true,
             name: 'V Output Combined',

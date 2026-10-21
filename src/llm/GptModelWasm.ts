@@ -298,6 +298,21 @@ function readLocalBuffersFromWasm(wasmModel: IWasmGptModel, jsModel: IGptModelLi
 
     readFromWasmToBufferTex(TensorType.Logits, 0, jsModel.lm_head.output);
     readFromWasmToBufferTex(TensorType.LogitsSmAgg, 0, jsModel.softmaxFinal.agg);
+    {
+        // WASM stores (max, sum of exp); the layout and the GPU path use (1 / sum of exp, max). Convert a copy
+        // (never write into WASM memory) so every reader sees the same convention.
+        let tex = jsModel.softmaxFinal.agg;
+        let src = tex.localBuffer!;
+        let conv = new Float32Array(src.length);
+        for (let k = 0; k < src.length; k += 2) {
+            conv[k + 0] = 1.0 / src[k + 1];
+            conv[k + 1] = src[k + 0];
+        }
+        tex.localBuffer = conv;
+        if (writeIntersToGpu) {
+            writeToBufferTex(jsModel.gl, tex, conv);
+        }
+    }
     readFromWasmToBufferTex(TensorType.LogitsSm, 0, jsModel.softmaxFinal.output);
 
 
