@@ -44,7 +44,16 @@ export interface IBlkDef {
     sizeX?: number; // size of the sub block
     sizeY?: number;
     sizeZ?: number;
+    meta?: IBlkMeta; // extra links for operations the index strings can't express (modern layouts)
 }
+
+/** Extra structure for modern-architecture operations (used by the inspector to explain a cell). */
+export type IBlkMeta =
+    | { kind: 'rope', src: IBlkDef, cos: IBlkDef, sin: IBlkDef, half: number }
+    | { kind: 'softmax', src: IBlkDef, axis: 'x' | 'y', causal: boolean }
+    | { kind: 'moeGate', probs: IBlkDef, topK: number }
+    | { kind: 'moeCombine', experts: IBlkDef[], weights: IBlkDef }
+    | { kind: 'concat', parts: IBlkDef[], partSize: number };
 
 export enum BlkSpecial {
     None,
@@ -66,7 +75,7 @@ export interface IBlkCellDep {
     srcIdxMtx: Mat4f; // inputs: [x, y, b, [i]], outputs: [x, y, b]
 }
 
-interface IBlkDepArgs {
+export interface IBlkDepArgs {
     dot?: [[IBlkDef, string], [IBlkDef, string]];
     dotLen?: number;
     add?: [IBlkDef, string][];
@@ -85,6 +94,14 @@ export enum BlKDepSpecial {
     SoftmaxAggMax,
     SoftmaxAggExp,
     Attention,
+    // modern architectures
+    RMSNormAgg,   // rms[t] = √(mean_c x[t,c]² + ε)
+    RMSNorm,      // x / rms · γ
+    RoPE,         // rotate channel pairs (j, j + A/2) by a position-dependent angle
+    SoftmaxDirect,// softmax computed straight from the scores (meta.softmax)
+    SwiGLU,       // silu(gate) · up
+    MoEGate,      // router probs -> top-k weights renormalised
+    MoECombine,   // Σ_e w[t,e] · expert_e(x)[t]
 }
 
 let depIdxVars = '0xybi';
@@ -135,7 +152,7 @@ export interface IBlkAccess {
     range?: number; // real 99th-percentile |value| of this block (set each frame); shown in the legend
 }
 
-interface IBlkAccessDefArgs {
+export interface IBlkAccessDefArgs {
     src?: IBufferTex;
     channel?: 'r' | 'g' | 'b';
     scale?: number;
@@ -146,7 +163,7 @@ interface IBlkAccessDefArgs {
     y: number[];
 }
 
-interface IBlkDefArgs {
+export interface IBlkDefArgs {
     t: 'w' | 'i' | 'a', // weights; intermediate value
     xL?: number; // pos of Left edge
     xR?: number; // Right
@@ -195,6 +212,51 @@ export function cellPosition(layout: IModelLayout, blk: IBlkDef, dim: Dim, index
     return base;
 }
 
+export function mkBlk(args: IBlkDefArgs, cell: number): IBlkDef {
+    let xDef = [args.xL, args.xR, args.xM].map(a => +!isNil(a)).reduce((a, b) => a + b, 0);
+    let yDef = [args.zF, args.zB, args.zM].map(a => +!isNil(a)).reduce((a, b) => a + b, 0);
+    if (xDef !== 1 || yDef !== 1) {
+        throw new Error(`Must supply exactly 1 x arg & 1 y arg: ${JSON.stringify(args)}`);
+    }
+    let dx = args.cx * cell;
+    let dy = args.cz * cell;
+    let x = !isNil(args.xL) ? args.xL : !isNil(args.xR) ? args.xR - dx : args.xM! - dx / 2;
+    let z = !isNil(args.zB) ? args.zB : !isNil(args.zF) ? args.zF - dy : args.zM! - dy / 2;
+
+    function ensure4(a: number[]) {
+        return a.length === 4 ? a : [...a, 0];
+    }
+
+    return {
+        dx: args.cx * cell,
+        dy: args.cy * cell,
+        dz: args.cz * cell,
+        t: args.t,
+        x: x,
+        y: args.y,
+        z: z,
+        cx: args.cx,
+        cy: args.cy,
+        cz: args.cz,
+        dimX: args.dimX,
+        dimY: args.dimY,
+        name: args.name ?? "<unknown>",
+        access: args.access?.src ? {
+            channel: args.access.channel ?? 'r',
+            src: args.access.src,
+            scale: args.access.scale ?? 1.0,
+            mat: Mat4f.fromColMajor([...ensure4(args.access.x), ...ensure4(args.access.y), 0, 0, 0, 0, 0, 0, 0, 0]),
+        } : undefined,
+        deps: args.deps ? depArgsToDeps(args.deps) : undefined,
+        opacity: args.hidden ? 0.0 : 1.0,
+        highlight: 0.0,
+        small: args.small ?? false,
+        special: args.special ?? BlkSpecial.None,
+        transpose: args.transpose,
+        idx: -1,
+    };
+}
+
 export type IGptModelLayout = ReturnType<typeof genGptModelLayout>;
 export type IGptLayerNormLayout = IGptModelLayout['ln_f'];
 
@@ -219,48 +281,7 @@ export function genGptModelLayout(shape: IModelShape, gptGpuModel: IGptModelLink
     let margin = Math.max(12, C / 10);
 
     function mk(args: IBlkDefArgs): IBlkDef {
-        let xDef = [args.xL, args.xR, args.xM].map(a => +!isNil(a)).reduce((a, b) => a + b, 0);
-        let yDef = [args.zF, args.zB, args.zM].map(a => +!isNil(a)).reduce((a, b) => a + b, 0);
-        if (xDef !== 1 || yDef !== 1) {
-            throw new Error(`Must supply exactly 1 x arg & 1 y arg: ${JSON.stringify(args)}`);
-        }
-        let dx = args.cx * cell;
-        let dy = args.cz * cell;
-        let x = !isNil(args.xL) ? args.xL : !isNil(args.xR) ? args.xR - dx : args.xM! - dx / 2;
-        let z = !isNil(args.zB) ? args.zB : !isNil(args.zF) ? args.zF - dy : args.zM! - dy / 2;
-
-        function ensure4(a: number[]) {
-            return a.length === 4 ? a : [...a, 0];
-        }
-
-        return {
-            dx: args.cx * cell,
-            dy: args.cy * cell,
-            dz: args.cz * cell,
-            t: args.t,
-            x: x,
-            y: args.y,
-            z: z,
-            cx: args.cx,
-            cy: args.cy,
-            cz: args.cz,
-            dimX: args.dimX,
-            dimY: args.dimY,
-            name: args.name ?? "<unknown>",
-            access: args.access?.src ? {
-                channel: args.access.channel ?? 'r',
-                src: args.access.src,
-                scale: args.access.scale ?? 1.0,
-                mat: Mat4f.fromColMajor([...ensure4(args.access.x), ...ensure4(args.access.y), 0, 0, 0, 0, 0, 0, 0, 0]),
-            } : undefined,
-            deps: args.deps ? depArgsToDeps(args.deps) : undefined,
-            opacity: args.hidden ? 0.0 : 1.0,
-            highlight: 0.0,
-            small: args.small ?? false,
-            special: args.special ?? BlkSpecial.None,
-            transpose: args.transpose,
-            idx: -1,
-        };
+        return mkBlk(args, cell);
     }
 
     function mkLabel(init: number, cubes?: IBlkDef[]): IBlkLabel {

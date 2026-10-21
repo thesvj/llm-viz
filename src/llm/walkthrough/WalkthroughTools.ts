@@ -368,6 +368,8 @@ export enum DimStyle {
     Intermediates,
     Weights,
     Aggregates,
+    H,  // MLP hidden size (modern models)
+    E,  // number of experts (MoE)
 }
 
 export function dimStyleColor(style: DimStyle) {

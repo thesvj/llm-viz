@@ -85,6 +85,9 @@ export function drawDataFlow(state: IProgramState, blk: IBlkDef, destIdx: Vec3, 
     } else if (blk.deps.special === BlKDepSpecial.Gelu) {
         bb = drawGeluActivation(dataFlowArgs);
 
+    } else if (blk.deps.special >= BlKDepSpecial.RMSNormAgg) {
+        // modern-architecture operations: explained in the inspector panel, no 3D popup yet
+
     // Standard ones
     } else if (blk.deps.dot) {
         bb = drawOLMatrixMul(dataFlowArgs);
@@ -178,10 +181,13 @@ export function drawOLInputEmbed(args: IDataFlowArgs) {
     return drawMaths(args, center, mkTextBlock({
         opts: { color: nameColor, mtx, size: 16 },
 
-        subs: [
+        subs: args.state.layout.posEmbedObj ? [
             { type: TextBlockType.Custom, draw: (blk) => drawOLIndexLookup(args, blk.offset), size: new Vec3(tokEmbedBlockWidth, embedBlockHeight) },
             { text: ' + ' },
             { type: TextBlockType.Custom, draw: (blk) => drawOLPosEmbedLookup(args, blk.offset), size: new Vec3(posEmbedBlockWidth, embedBlockHeight) },
+        ] : [
+            // RoPE models: no position table, the token row is used as is
+            { type: TextBlockType.Custom, draw: (blk) => drawOLIndexLookup(args, blk.offset), size: new Vec3(tokEmbedBlockWidth, embedBlockHeight) },
         ]
 
     }), [20, 0, 0, 0]);

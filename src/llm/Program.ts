@@ -5,6 +5,9 @@ import { drawModelCard } from "./components/ModelCard";
 import { IGptModelLink, IGpuGptModel, IModelShape } from "./GptModel";
 import { genGptModelLayout, IBlkDef, IGptModelLayout } from "./GptModelLayout";
 import { ILayoutBase } from "./LayoutBase";
+import { IModelMode } from "./arch/ModernModels";
+import { IModernRuntime, stepModern } from "./arch/ModernRuntime";
+import { genModernLayout } from "./arch/ModernLayout";
 import { applyFocus, applyValueRanges, defaultVizSettings, IVizSettings } from "./VizSettings";
 import { drawText, IFontAtlasData, IFontOpts, measureText } from "./render/fontRender";
 import { initRender, IRenderState, IRenderView, renderModel, resetRenderBuffers } from "./render/modelRender";
@@ -46,6 +49,8 @@ export interface IProgramState {
     movement: IMovementInfo;
     display: IDisplayState;
     viz: IVizSettings;
+    modelMode: IModelMode;
+    modern: Partial<Record<IModelMode, IModernRuntime>>;
     pageLayout: ILayout;
     markDirty: () => void;
 }
@@ -209,6 +214,8 @@ export function initProgramState(canvasEl: HTMLCanvasElement, fontAtlasData: IFo
             cameraLerp: null,
          },
         viz: defaultVizSettings(),
+        modelMode: 'gpt2',
+        modern: {},
         display: {
             tokenColors: null,
             tokenIdxColors: null,
@@ -246,13 +253,22 @@ export function runProgram(view: IRenderView, state: IProgramState) {
         syncWasmDataWithJsAndGpu(state.wasmGptModel, state.jsGptModel);
     }
 
-    if (state.stepModel && state.wasmGptModel && state.jsGptModel) {
+    let modernRt = state.modelMode !== 'gpt2' ? state.modern[state.modelMode] ?? null : null;
+
+    if (state.stepModel && modernRt) {
+        state.stepModel = false;
+        stepModern(modernRt);
+    } else if (state.stepModel && state.wasmGptModel && state.jsGptModel) {
         state.stepModel = false;
         stepWasmModel(state.wasmGptModel, state.jsGptModel);
     }
 
-    // generate the base model, incorporating the gpu-side model if available
-    state.layout = genGptModelLayout(state.shape, state.jsGptModel);
+    // generate the base model, incorporating the live model data if available
+    if (modernRt) {
+        state.layout = genModernLayout(modernRt.model.config, modernRt);
+    } else {
+        state.layout = genGptModelLayout(state.shape, state.jsGptModel);
+    }
 
     // real value ranges per block (legend) and, in 'auto' mode, honest per-block colour scales
     applyValueRanges(state.layout, state.viz, new Set([state.layout.idxObj]));
@@ -289,7 +305,7 @@ export function runProgram(view: IRenderView, state: IProgramState) {
         drawAllArrows(state.render, gptLayout(state));
     }
 
-    drawModelCard(state, state.layout, 'nano-gpt', new Vec3());
+    drawModelCard(state, state.layout, modernRt ? `tiny-${modernRt.name}` : 'nano-gpt', new Vec3());
     // drawTokens(state.render, state.layout, state.display);
 
     for (let example of state.examples) {

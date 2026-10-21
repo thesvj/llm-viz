@@ -56,6 +56,22 @@ export function explainCell(blk: IBlkDef, idx: Vec3, tokEmbedObj?: IBlkDef, idxO
     let stored = val(blk, idx);
     let base = { stored, terms: [] as ICellTerm[], termCount: 0, termHeader: [] as string[] };
 
+    if (blk.meta?.kind === 'concat') {
+        let m = blk.meta;
+        let part = Math.floor(idx.y / m.partSize), within = idx.y % m.partSize;
+        let v = m.parts[part] ? val(m.parts[part], new Vec3(idx.x, within, idx.z)) : null;
+        return {
+            ...base,
+            op: 'Concatenate heads',
+            formula: `head ${part} output [t=${idx.x}, channel ${within}]`,
+            words: `The head outputs are stacked one after another. Channel ${idx.y} is channel ${within} of head ${part}.`,
+            termHeader: ['part', 'value'],
+            terms: [{ label: `head ${part}`, values: [v] }],
+            termCount: 1,
+            recomputed: v,
+        };
+    }
+
     if (!deps) {
         let isWeight = blk.t === 'w';
         return {
@@ -80,6 +96,10 @@ export function explainCell(blk: IBlkDef, idx: Vec3, tokEmbedObj?: IBlkDef, idxO
     }
 
     let add = deps.add ?? [];
+    let modern = explainModern(blk, idx, base);
+    if (modern) {
+        return modern;
+    }
     let bySpecial = (s: BlKDepSpecial) => add.find(d => d.src.deps?.special === s);
 
     // ---- input embedding: token row + position row ----
@@ -92,12 +112,13 @@ export function explainCell(blk: IBlkDef, idx: Vec3, tokEmbedObj?: IBlkDef, idxO
         return {
             ...base,
             op: 'Embedding lookup',
-            formula: `tokEmbed[token=${tok}, c=${idx.y}] + posEmbed[t=${idx.x}, c=${idx.y}]`,
-            words: `Look up row ${tok} of the token table and row ${idx.x} of the position table, then add them.`,
+            formula: posDep ? `tokEmbed[token=${tok}, c=${idx.y}] + posEmbed[t=${idx.x}, c=${idx.y}]` : `tokEmbed[token=${tok}, c=${idx.y}]`,
+            words: posDep ? `Look up row ${tok} of the token table and row ${idx.x} of the position table, then add them.`
+                : `Look up row ${tok} of the token table. No position is added here: RoPE adds position later, inside attention.`,
             termHeader: ['part', 'value'],
-            terms: [{ label: 'token part', values: [a] }, { label: 'position part', values: [b] }],
-            termCount: 2,
-            recomputed: a !== null && b !== null ? a + b : null,
+            terms: posDep ? [{ label: 'token part', values: [a] }, { label: 'position part', values: [b] }] : [{ label: 'token row', values: [a] }],
+            termCount: posDep ? 2 : 1,
+            recomputed: a !== null && (b !== null || !posDep) ? a + (b ?? 0) : null,
         };
     }
 
@@ -269,4 +290,169 @@ export function explainCell(blk: IBlkDef, idx: Vec3, tokEmbedObj?: IBlkDef, idxO
     }
 
     return { ...base, op: 'Computed', formula: '', words: '', recomputed: null };
+}
+
+function silu(x: number) {
+    return x / (1 + Math.exp(-x));
+}
+
+type IBase = Pick<ICellExplain, 'stored' | 'terms' | 'termCount' | 'termHeader'>;
+
+/** Operations of modern architectures (RMSNorm, RoPE, SwiGLU, MoE). Returns null for other blocks. */
+function explainModern(blk: IBlkDef, idx: Vec3, base: IBase): ICellExplain | null {
+    let deps = blk.deps!;
+    let add = deps.add ?? [];
+    let special = deps.special;
+    let meta = blk.meta;
+
+    if (special === BlKDepSpecial.RMSNormAgg) {
+        let dep = add[0];
+        let n = iLength(dep, idx);
+        let xs: number[] = [];
+        for (let i = 0; i < n; i++) {
+            let v = val(dep.src, srcIdxFor(dep, idx, i));
+            if (v !== null) xs.push(v);
+        }
+        let ms = xs.reduce((a, b) => a + b * b, 0) / xs.length;
+        return {
+            ...base,
+            op: 'Root mean square (rms)',
+            formula: `rms = √( (1/${n}) Σᵢ x[i]² + ε )`,
+            words: `The typical size of this token's ${n} numbers. Unlike LayerNorm there is no mean to subtract.`,
+            termHeader: ['i', 'x[i]'],
+            terms: xs.slice(0, maxTerms).map((x, i) => ({ label: `${i}`, values: [x] })),
+            termCount: n,
+            recomputed: Math.sqrt(ms + 1e-5),
+        };
+    }
+
+    if (special === BlKDepSpecial.RMSNorm) {
+        let [xDep, rDep, gDep] = add;
+        let x = val(xDep.src, srcIdxFor(xDep, idx, 0));
+        let r = val(rDep.src, srcIdxFor(rDep, idx, 0));
+        let g = val(gDep.src, srcIdxFor(gDep, idx, 0));
+        return {
+            ...base,
+            op: 'RMS norm',
+            formula: 'x / rms · γ',
+            words: 'Divide by the token\'s typical size so every token has a similar scale, then apply the learned scale γ.',
+            termHeader: ['part', 'value'],
+            terms: [{ label: 'x', values: [x] }, { label: 'rms', values: [r] }, { label: 'γ', values: [g] }],
+            termCount: 3,
+            recomputed: x !== null && r !== null && g !== null ? x / r * g : null,
+        };
+    }
+
+    if (special === BlKDepSpecial.RoPE && meta?.kind === 'rope') {
+        let h = meta.half;
+        let a = idx.y, t = idx.x;
+        let upper = a >= h;
+        let partner = upper ? a - h : a + h;
+        let own = val(meta.src, new Vec3(t, a, idx.z));
+        let other = val(meta.src, new Vec3(t, partner, idx.z));
+        let c = val(meta.cos, new Vec3(t, a, 0));
+        let sn = val(meta.sin, new Vec3(t, a, 0));
+        let ok = own !== null && other !== null && c !== null && sn !== null;
+        let angle = ok ? Math.atan2(sn!, c!) : 0;
+        return {
+            ...base,
+            op: 'RoPE rotation',
+            formula: upper ? `x[${a}]·cos θ + x[${partner}]·sin θ` : `x[${a}]·cos θ − x[${partner}]·sin θ`,
+            words: `Channels ${Math.min(a, partner)} and ${Math.max(a, partner)} form a pair. The pair is rotated by an angle θ that grows with the position (t = ${t}), so the dot product of Q and K depends on how far apart two tokens are.`,
+            termHeader: ['part', 'value'],
+            terms: [{ label: `x[${a}]`, values: [own] }, { label: `x[${partner}]`, values: [other] }, { label: 'cos θ', values: [c] }, { label: 'sin θ', values: [sn] }, { label: 'θ (rad)', values: [ok ? angle : null] }],
+            termCount: 5,
+            recomputed: ok ? (upper ? own! * c! + other! * sn! : own! * c! - other! * sn!) : null,
+        };
+    }
+
+    if (special === BlKDepSpecial.SoftmaxDirect && meta?.kind === 'softmax') {
+        let alongX = meta.axis === 'x';
+        let n = alongX ? meta.src.cx : meta.src.cy;
+        if (meta.causal) n = Math.min(n, idx.y + 1);
+        let xs: number[] = [];
+        for (let i = 0; i < n; i++) {
+            let v = val(meta.src, alongX ? new Vec3(i, idx.y, idx.z) : new Vec3(idx.x, i, idx.z));
+            if (v !== null) xs.push(v);
+        }
+        let m = Math.max(...xs);
+        let sum = xs.reduce((a, x) => a + Math.exp(x - m), 0);
+        let own = alongX ? idx.x : idx.y;
+        let x = xs[own];
+        return {
+            ...base,
+            op: 'Softmax',
+            formula: `exp(x[${own}] − max) / Σᵢ exp(x[i] − max)`,
+            words: meta.causal
+                ? `Turn token ${idx.y}'s ${n} scores into probabilities that add up to 1. Later tokens are blocked.`
+                : `Turn the ${n} scores into probabilities that add up to 1.`,
+            termHeader: ['i', 'score'],
+            terms: xs.slice(0, maxTerms).map((v, i) => ({ label: i === own ? `${i} ◀` : `${i}`, values: [v] })),
+            termCount: n,
+            recomputed: x !== undefined ? Math.exp(x - m) / sum : null,
+        };
+    }
+
+    if (special === BlKDepSpecial.SwiGLU) {
+        let [gDep, uDep] = add;
+        let g = val(gDep.src, srcIdxFor(gDep, idx, 0));
+        let u = val(uDep.src, srcIdxFor(uDep, idx, 0));
+        return {
+            ...base,
+            op: 'SwiGLU',
+            formula: 'silu(gate) · up,   silu(g) = g / (1 + e^(−g))',
+            words: 'The gate decides how much of the "up" value passes. Negative gates close it, positive gates open it.',
+            termHeader: ['part', 'value'],
+            terms: [{ label: 'gate', values: [g] }, { label: 'silu(gate)', values: [g !== null ? silu(g) : null] }, { label: 'up', values: [u] }],
+            termCount: 3,
+            recomputed: g !== null && u !== null ? silu(g) * u : null,
+        };
+    }
+
+    if (special === BlKDepSpecial.MoEGate && meta?.kind === 'moeGate') {
+        let probsBlk = meta.probs;
+        let E = probsBlk.cy;
+        let ps = Array.from({ length: E }, (_, e) => val(probsBlk, new Vec3(idx.x, e, idx.z)) ?? 0);
+        let order = ps.map((p, e) => ({ p, e })).sort((a, b) => b.p - a.p);
+        let top = order.slice(0, meta.topK);
+        let tot = top.reduce((a, o) => a + o.p, 0);
+        let chosen = top.some(o => o.e === idx.y);
+        return {
+            ...base,
+            op: chosen ? `Chosen expert (top-${meta.topK})` : 'Expert not chosen',
+            formula: chosen ? `p[${idx.y}] / (sum of the top-${meta.topK} p)` : '0',
+            words: chosen
+                ? `Token ${idx.x} is sent to its ${meta.topK} most likely experts. Expert ${idx.y} is one of them; its share is renormalised so the chosen weights add up to 1.`
+                : `Token ${idx.x} does not use expert ${idx.y}: it is not in the top ${meta.topK}.`,
+            termHeader: ['expert', 'router p'],
+            terms: order.map(o => ({ label: `${o.e}${top.includes(o) ? ' ✓' : ''}`, values: [o.p] })),
+            termCount: E,
+            recomputed: chosen ? ps[idx.y] / tot : 0,
+        };
+    }
+
+    if (special === BlKDepSpecial.MoECombine && meta?.kind === 'moeCombine') {
+        let sum = 0, ok = true;
+        let terms: ICellTerm[] = [];
+        let weightsBlk = meta.weights;
+        meta.experts.forEach((ex, e) => {
+            let w = val(weightsBlk, new Vec3(idx.x, e, idx.z));
+            let y = val(ex, new Vec3(idx.x, idx.y, idx.z));
+            if (w === null || y === null) { ok = false; return; }
+            sum += w * y;
+            terms.push({ label: `${e}${w > 0 ? ' ✓' : ''}`, values: [w, y, w * y] });
+        });
+        return {
+            ...base,
+            op: 'Mix the chosen experts',
+            formula: 'Σₑ w[e] · expert_e(x)',
+            words: 'Add up the experts\' outputs, each times its weight. Experts that were not chosen have weight 0, so they cost nothing in a real model.',
+            termHeader: ['expert', 'w', 'output', 'w·out'],
+            terms,
+            termCount: meta.experts.length,
+            recomputed: ok ? sum : null,
+        };
+    }
+
+    return null;
 }

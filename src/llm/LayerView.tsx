@@ -23,6 +23,7 @@ import { ModelSelectorToolbar } from './components/ModelSelectorToolbar';
 import { ViewPanel } from './components/ViewPanel';
 import { AttentionPanel } from './components/AttentionPanel';
 import { explainCell } from './CellExplain';
+import { loadModernModels } from './arch/ModernModels';
 
 async function fetchTensorData(url: string): Promise<ITensorSet> {
     let resp = await fetch(url);
@@ -247,6 +248,12 @@ class CanvasRender {
         if (process.env.NODE_ENV === 'development') {
             // debug handle for in-browser checks (dev builds only)
             (window as any).__llmviz = { state: this.progState, explainCell };
+        }
+        if (this.progState.render) {
+            loadModernModels(this.progState.render.gl).then(models => {
+                this.progState.modern = models;
+                this.markDirty();
+            });
         }
         this.progState.markDirty = this.markDirty;
         this.progState.walkthrough.markDirty = this.markDirty;
