@@ -1,5 +1,7 @@
 import { genModelViewMatrices, ICamera, ICameraPos, updateCamera } from "./Camera";
 import { drawAllArrows } from "./components/Arrow";
+import { drawModernArrows } from "./arch/ModernArrows";
+import { drawCacheMarks } from "./arch/ModernCache";
 import { drawBlockLabels } from "./components/SectionLabels";
 import { drawModelCard } from "./components/ModelCard";
 import { IGptModelLink, IGpuGptModel, IModelShape } from "./GptModel";
@@ -361,7 +363,12 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     if (state.layout.kind === 'gpt2') {
         drawBlockLabels(state.render, gptLayout(state));
     } else {
-        drawModernLabels(state.render, state.layout as IModernLayout);
+        let ml = state.layout as IModernLayout;
+        drawModernLabels(state.render, ml);
+        drawModernArrows(state.render, ml);
+        if (modernRt) {
+            drawCacheMarks(state.render, ml, modernRt);
+        }
     }
 
     let lineNo = 1;

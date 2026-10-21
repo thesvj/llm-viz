@@ -114,6 +114,7 @@ export function runModern(rt: IModernRuntime) {
     let snaps = ['embed'];
     for (let l = 0; l < config.n_layer; l++) snaps.push(`l${l}.resid1`, `l${l}.resid2`);
     rt.lens = snaps.map(name => ({ name, probs: logitLens(rt.model, rt.rec[name]) }));
+    rt.lens.forEach((l, i) => texFor(rt, `lens.${i}`, l.probs));
 }
 
 /** One generation step: sample the next token from the last real position (with temperature), append it, re-run.

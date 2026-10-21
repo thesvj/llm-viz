@@ -72,6 +72,36 @@ export function explainCell(blk: IBlkDef, idx: Vec3, tokEmbedObj?: IBlkDef, idxO
         };
     }
 
+    if (blk.meta?.kind === 'lens') {
+        let m = blk.meta;
+        let t = idx.x, C = m.src.cy, V = blk.cy;
+        let xs = Array.from({ length: C }, (_, c) => val(m.src, new Vec3(t, c, 0)));
+        let gs = Array.from({ length: C }, (_, c) => val(m.gamma, new Vec3(0, c, 0)));
+        let ok = xs.every(v => v !== null) && gs.every(v => v !== null);
+        let logits: number[] = [];
+        if (ok) {
+            let rms = Math.sqrt((xs as number[]).reduce((a, x) => a + x * x, 0) / C + m.eps);
+            for (let v = 0; v < V; v++) {
+                let s = 0;
+                for (let c = 0; c < C; c++) s += xs[c]! / rms * gs[c]! * (val(m.lmHead, new Vec3(c, v, 0)) ?? NaN);
+                logits.push(s);
+            }
+        }
+        let mx = Math.max(...logits);
+        let sum = logits.reduce((a, l) => a + Math.exp(l - mx), 0);
+        let probs = logits.map(l => Math.exp(l - mx) / sum);
+        return {
+            ...base,
+            op: 'Logit lens',
+            formula: 'softmax( LM head · RMS norm(x) )',
+            words: `A probe, not part of the model: apply the final RMS norm and the LM head to token ${t}'s numbers at this point. It shows what the model would guess if it stopped here.`,
+            termHeader: ['token', 'logit', 'prob'],
+            terms: logits.map((l, v) => ({ label: `${String.fromCharCode(65 + v)}${v === idx.y ? ' ◀' : ''}`, values: [l, probs[v]] })),
+            termCount: V,
+            recomputed: ok && Number.isFinite(probs[idx.y]) ? probs[idx.y] : null,
+        };
+    }
+
     if (!deps) {
         let isWeight = blk.t === 'w';
         return {

@@ -45,6 +45,8 @@ export interface IModernLayout extends ILayoutBase {
     lmHead: IBlkDef;
     logits: IBlkDef;
     residuals: IBlkDef[]; // the residual stream, top to bottom
+    /** Logit-lens probes, one per residual (live models only): what the model would guess if it stopped there. */
+    lens: IBlkDef[];
 }
 
 /** layersPerColumn: big models wrap their layers into side-by-side columns (like GPT-2 XL in the original). */
@@ -251,6 +253,16 @@ export function genModernLayout(config: IModernConfig, rt: IModernRuntime | null
     y += V * cell + margin;
     labels.push(labelOf(normF.rms, normF.gamma, normF.out), labelOf(lmHead, logits, logitsSoftmax));
 
+    // logit-lens probes to the right of the stream; made last so the other cubes keep their index
+    let lens: IBlkDef[] = [];
+    if (rt) {
+        residuals.forEach((r, i) => {
+            let where = i === 0 ? 'after embedding' : `after layer ${Math.ceil(i / 2)}${i % 2 === 1 ? ' attention' : ''}`;
+            lens.push(mk({ t: 'a', cx: T, cy: V, cz: 1, y: r.y + r.dy / 2 - V * cell / 2 - offset.y, xL: resHalf + 2 * margin, zM: 0, access: tc(`lens.${i}`), dimX: DimStyle.T, dimY: DimStyle.n_vocab, name: `Guess ${where}` },
+                { kind: 'lens', src: r, gamma: normF.gamma, lmHead, eps: config.norm_eps }));
+        });
+    }
+
     cubes.forEach((c, i) => c.idx = i);
 
     let shape: IModelShape = { B: 1, T, C, nHeads: nH, A, nBlocks: L, vocabSize: V };
@@ -265,6 +277,6 @@ export function genModernLayout(config: IModernConfig, rt: IModernRuntime | null
         model: rt,
         attnHeads: blocks.map(b => b.heads.map(h => h.probs)),
         tokenText: (id: number) => String.fromCharCode('A'.charCodeAt(0) + id),
-        blocks, normF, lmHead, logits, residuals,
+        blocks, normF, lmHead, logits, residuals, lens,
     };
 }

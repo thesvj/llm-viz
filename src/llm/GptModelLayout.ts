@@ -53,7 +53,8 @@ export type IBlkMeta =
     | { kind: 'softmax', src: IBlkDef, axis: 'x' | 'y', causal: boolean }
     | { kind: 'moeGate', probs: IBlkDef, topK: number }
     | { kind: 'moeCombine', experts: IBlkDef[], weights: IBlkDef }
-    | { kind: 'concat', parts: IBlkDef[], partSize: number };
+    | { kind: 'concat', parts: IBlkDef[], partSize: number }
+    | { kind: 'lens', src: IBlkDef, gamma: IBlkDef, lmHead: IBlkDef, eps: number };
 
 export enum BlkSpecial {
     None,

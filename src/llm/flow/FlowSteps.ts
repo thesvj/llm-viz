@@ -56,11 +56,11 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
     });
     steps.push({
         id: 'residual', group: 'Input', title: 'The residual stream',
-        blocks: layout.residuals,
+        blocks: [...layout.residuals, ...layout.lens],
         shape: `${layout.residuals.length} snapshots of ${T} × ${C}`,
         text: [
             `The ${T} × ${C} block of numbers in the centre column is the residual stream. Every part of every layer reads it and adds its result back onto it.`,
-            `The panel below shows what the model would predict if it stopped after each snapshot ("logit lens"). The answer usually gets clearer layer by layer.`,
+            `The small ${T} × ${V} block to the right of each snapshot is a "logit lens": the guess the model would make if it stopped there. The panel below lists the same guesses; they usually get clearer layer by layer.`,
         ],
         panel: 'residual',
     });
@@ -254,10 +254,11 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
     });
     steps.push({
         id: 'generate', group: 'Output', title: 'Generating, and the KV cache',
-        blocks: [layout.idxObj, layout.logitsSoftmax],
+        blocks: b.kv.flatMap(k => [k.kRope, k.v]),
         text: [
             `To generate, the model appends its chosen token and runs again. Click "Next token" to watch the list grow.`,
             `Keys and values of earlier tokens never change, because tokens only look backwards. Real models store them (the KV cache) and compute only the newest column on each step.`,
+            `The 3D view shows this layer's keys and values. After a step, the reused columns are outlined in blue ("cached") and the one new column in orange ("new").`,
         ],
         panel: 'cache',
     });

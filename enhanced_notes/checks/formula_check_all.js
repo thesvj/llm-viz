@@ -17,7 +17,7 @@
     let tested = 0, ok = 0, masked = 0, skipped = {}, bad = {}, noSrc = [];
     for (const b of L.cubes) {
       if (b.access && !b.access.src) noSrc.push(b.name);
-      if (!b.deps) continue;
+      if (!b.deps && !(b.meta && b.meta.kind === 'lens')) continue;
       for (let x = 0; x < b.cx; x++) for (let y = 0; y < b.cy; y++) for (let z = 0; z < b.cz; z++) {
         const e = explainCell(b, Object.assign(Object.create(P), { x, y, z }), L.tokEmbedObj, L.idxObj);
         if (e && e.masked) { masked++; continue; }

@@ -33,11 +33,8 @@ import { Vec3, Vec3Buf, Vec4 } from "@/src/utils/vector";
 
 export function drawAllArrows(state: IRenderState, layout: IGptModelLayout) {
 
-    let pad = 2.0;
     let prevResid = layout.residual0;
-    let residWidth = 6;
-    let weightColor = Vec4.fromHexColor('#3333aa');
-    let dataColor = Vec4.fromHexColor('#33aa33');
+    let { drawVertArrow, drawHorizArrow, drawArrowResidSplit, drawArrowBotToSide, drawArrowBetween } = arrowKit(state, layout.cell);
 
     drawVertArrow(layout.idxObj, layout.residual0);
     drawHorizArrow(layout.tokEmbedObj, layout.residual0);
@@ -124,6 +121,15 @@ export function drawAllArrows(state: IRenderState, layout: IGptModelLayout) {
         drawVertArrow(layout.logits, layout.logitsAgg2);
         drawVertArrow(layout.logitsAgg1, layout.logitsSoftmax);
     }
+}
+
+/** Arrow helpers shared by the GPT-2 and modern layouts. */
+export function arrowKit(state: IRenderState, cell: number) {
+    let pad = 2.0;
+    let residWidth = 6;
+    let weightColor = Vec4.fromHexColor('#3333aa');
+    let dataColor = Vec4.fromHexColor('#33aa33');
+    let layout = { cell };
 
     function blkColor(src: IBlkDef) {
         return src.t === 'w' ? weightColor : dataColor;
@@ -231,6 +237,7 @@ export function drawAllArrows(state: IRenderState, layout: IGptModelLayout) {
             drawArrow(state, start, end, width, normal, color, true);
         }
     }
+    return { blkColor, blockPos, drawVertArrow, drawHorizArrow, drawArrowResidSplit, drawArrowBotToSide, drawArrowBetween };
 }
 
 export enum BlockPos {
