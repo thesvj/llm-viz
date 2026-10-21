@@ -52,3 +52,4 @@ styles/dist.css
 src/cpu/tests/*_.s
 *.o
 *.ll
+tools/.venv/
