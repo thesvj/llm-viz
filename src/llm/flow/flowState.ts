@@ -60,7 +60,7 @@ export function goToStep(state: IProgramState, idx: number) {
     idx = Math.max(0, Math.min(steps.length - 1, idx));
     state.flow.step = idx;
     state.display.pinned = null;
-    flyToBlocks(state, flowFocusBlocks(state), undefined, 1.3, undefined, 2.5);
+    flyToBlocks(state, flowFocusBlocks(state), undefined, 1.3, undefined, 1.2);
     saveFlowView(state);
     state.markDirty();
 }

@@ -5,7 +5,7 @@
 import { IBlkDef } from "../GptModelLayout";
 import { IModernLayout } from "../arch/ModernLayout";
 
-export type IFlowPanel = 'tokens' | 'residual' | 'gqa' | 'mask' | 'attention' | 'moe' | 'output' | 'cache';
+export type IFlowPanel = 'rope' | 'tokens' | 'residual' | 'gqa' | 'mask' | 'attention' | 'moe' | 'output' | 'cache';
 
 export interface IFlowStep {
     id: string;
@@ -96,6 +96,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             `RoPE turns each pair of channels (j and j + ${A / 2}) of every query and key by an angle. The angle grows with the token's position, so the cos and sin tables change from column to column.`,
             `Because both query and key are turned, their dot product depends on how far apart the two tokens are. That is how the model knows order.`,
         ],
+        panel: 'rope',
         vsGpt2: `GPT-2 adds position once, at the input. RoPE adds it in every layer, and only to queries and keys, not values.`,
     });
     steps.push({

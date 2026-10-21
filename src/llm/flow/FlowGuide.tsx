@@ -182,6 +182,34 @@ const Panel: React.FC<{ state: IProgramState, rt: IModernRuntime, layout: IModer
         </Box>;
     }
 
+    case 'rope': {
+        let A = c.head_dim ?? c.n_embd / nH, h = A / 2;
+        let q = rt.rec[`l${l}.attn.q`].data, qr = rt.rec[`l${l}.attn.q_rope`].data;
+        let base = (0 * T + t) * A; // head 0, position t
+        return <Box title={`Rotation angles at position ${t} ("${letter(rt.tokens[t])}")`}>
+            {follow}
+            <div className='flex flex-wrap gap-3'>
+                {Array.from({ length: h }, (_, j) => {
+                    let ang = t / Math.pow(c.rope_theta, (2 * j) / A);
+                    let deg = (ang * 180 / Math.PI) % 360;
+                    return <div key={j} className='text-center text-[11px]'>
+                        <svg width={44} height={44} viewBox='-22 -22 44 44'>
+                            <circle r={18} fill='none' stroke='#e5e7eb' strokeWidth={2} />
+                            <line x1={0} y1={0} x2={18} y2={0} stroke='#cbd5e1' strokeWidth={1.5} />
+                            <line x1={0} y1={0} x2={18 * Math.cos(ang)} y2={-18 * Math.sin(ang)} stroke='#2563eb' strokeWidth={2.5} strokeLinecap='round' />
+                        </svg>
+                        <div className='text-gray-500'>pair {j}</div>
+                        <div className='tabular-nums'>{deg.toFixed(0)}°</div>
+                    </div>;
+                })}
+            </div>
+            <div className='text-xs text-gray-600 mt-2'>
+                Pair 0 turns by 1 radian per position, later pairs turn slower (the angle shrinks by a factor {c.rope_theta.toLocaleString('en-US')}<sup>2/{A}</sup> per pair).
+                Real numbers for head 0, pair 0: ({q[base].toFixed(3)}, {q[base + h].toFixed(3)}) becomes ({qr[base].toFixed(3)}, {qr[base + h].toFixed(3)}). Its length stays the same.
+            </div>
+        </Box>;
+    }
+
     case 'mask': {
         let n = rt.inputLen;
         return <Box title='Which earlier tokens each token may look at'>
