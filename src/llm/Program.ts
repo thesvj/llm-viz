@@ -63,6 +63,7 @@ export interface IModelExample {
 
 export interface IMouseState {
     mousePos: Vec3;
+    inside: boolean; // false while the pointer is over a panel or outside the canvas
 }
 
 export interface IDisplayState {
@@ -198,6 +199,7 @@ export function initProgramState(canvasEl: HTMLCanvasElement, fontAtlasData: IFo
         htmlSubs: new Subscriptions(),
         mouse: {
             mousePos: new Vec3(),
+            inside: false,
         },
         movement: {
             action: null,

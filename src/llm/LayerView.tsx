@@ -21,6 +21,7 @@ import { KeyboardManagerContext, KeyboardOrder, useGlobalKeyboard } from '@/src/
 import { Resizer } from '../utils/Resizer';
 import { ModelSelectorToolbar } from './components/ModelSelectorToolbar';
 import { ViewPanel } from './components/ViewPanel';
+import { AttentionPanel } from './components/AttentionPanel';
 import { explainCell } from './CellExplain';
 
 async function fetchTensorData(url: string): Promise<ITensorSet> {
@@ -216,6 +217,7 @@ export function LayerView() {
             </div> */}
             <ModelSelectorToolbar />
             <ViewPanel />
+            <AttentionPanel />
         </ProgramStateContext.Provider>}
     </div>;
 

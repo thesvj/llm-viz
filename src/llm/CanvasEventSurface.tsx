@@ -113,6 +113,7 @@ export const CanvasEventSurface: React.FC<{
             let mousePos = new Vec3(ev.clientX - canvasBcr.left, ev.clientY - canvasBcr.top, 0);
             updateRenderState(ps => {
                 ps.mouse.mousePos = mousePos;
+                ps.mouse.inside = true;
             });
         }
     }
@@ -138,6 +139,7 @@ export const CanvasEventSurface: React.FC<{
         onMouseDown={handleMouseDown}
         onClick={handleClick}
         onMouseMove={handleMouseMove}
+        onMouseLeave={() => { if (progState) { progState.mouse.inside = false; progState.markDirty(); } }}
         onWheel={handleWheel}
         onContextMenu={ev => ev.preventDefault()}
         style={{ cursor: dragStart ? 'grabbing' : progState.display.hoverTarget ? 'crosshair' : 'grab' }}

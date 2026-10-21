@@ -21,4 +21,8 @@ export interface ILayoutBase extends IModelLayout {
     residual0: IBlkDef;
     logitsSoftmax: IBlkDef;
     model: IModelRuntimeLink | null;
+    /** Softmax attention block per [layer][head]; cell (x = key token, y = query token) = probability. */
+    attnHeads: IBlkDef[][];
+    /** Text for a token id. */
+    tokenText: (id: number) => string;
 }

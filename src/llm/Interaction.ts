@@ -53,7 +53,7 @@ export function runMouseHitTesting(state: IProgramState) {
     let minT = 0.0;
     let minCube: [IBlkDef, IBlkDef] | null = null;
 
-    for (let [c, main] of visibleCubes) {
+    for (let [c, main] of (state.mouse.inside ? visibleCubes : [])) {
         let tl = new Vec3(c.x, c.y, c.z);
         let br = new Vec3(c.x + c.dx, c.y + c.dy, c.z + c.dz);
 

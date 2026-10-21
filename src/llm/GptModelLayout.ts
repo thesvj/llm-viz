@@ -932,6 +932,8 @@ export function genGptModelLayout(shape: IModelShape, gptGpuModel: IGptModelLink
         logitsTransposed,
         model: gptGpuModel,
         labels: [embedLabel, ...blocks.flatMap(b => b.labels)],
+        attnHeads: blocks.map(b => b.heads.map(h => h.attnMtxSm)),
+        tokenText: (id: number) => String.fromCharCode('A'.charCodeAt(0) + id), // nano-gpt sorts letters A, B, C
         weightCount,
         shape,
         extraSources: {

@@ -79,7 +79,7 @@ export const Inspector: React.FC = () => {
                 Shape {dims.map(d => `${dimStyleText(d.d)}=${d.n}`).join(' × ') || 'scalar'}
             </div>
             <div className='text-xs text-gray-600'>
-                Cell {dims.map(d => <span key={d.d} className='mr-2'><span className='font-mono'>{dimStyleText(d.d)}={d.i}</span>{dimMeaning[d.d] ? ` (${dimMeaning[d.d]})` : ''}</span>)}
+                Cell {dims.map((d, k) => <span key={k} className='mr-2'><span className='font-mono'>{dimStyleText(d.d)}={d.i}</span>{dimMeaning[d.d] ? ` (${dimMeaning[d.d]})` : ''}</span>)}
             </div>
             <div className='flex items-baseline gap-2 mt-1'>
                 <span className='text-xs text-gray-500'>value</span>
