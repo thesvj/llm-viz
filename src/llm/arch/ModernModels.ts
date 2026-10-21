@@ -1,3 +1,4 @@
+import { assetUrl } from "@/src/utils/basePath";
 import { createModernRuntime, IModernRuntime } from "./ModernRuntime";
 
 export type IModelMode = 'gpt2' | 'llama' | 'moe';
@@ -12,7 +13,7 @@ export const modelModeInfo: Record<IModelMode, { title: string, sub: string }> =
 export async function loadModernModels(gl: WebGL2RenderingContext): Promise<Partial<Record<IModelMode, IModernRuntime>>> {
     let out: Partial<Record<IModelMode, IModernRuntime>> = {};
     for (let name of ['llama', 'moe'] as const) {
-        let resp = await fetch(`/tiny-${name}-model.json`);
+        let resp = await fetch(assetUrl(`tiny-${name}-model.json`));
         if (!resp.ok) {
             console.warn(`could not load tiny-${name}-model.json (${resp.status})`);
             continue;

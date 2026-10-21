@@ -1,13 +1,12 @@
+# LLM visualization
 
-# Brendan Bycroft's Home Page & Projects
+Interactive 3D view of a small language model running inference.
 
-This repository contains my (Brendan's) homepage, as well as a number of non-trivial projects.
+This is a fork of [Brendan Bycroft's llm-viz](https://github.com/bbycroft/llm-viz).
+The original personal homepage and photo are not included.
 
-They are kept in a single repository for ease of deployment, as well as sharing a bunch of js utils
-which are otherwise a pain to share around.
-
-**License:** MIT (see [`LICENSE`](LICENSE)), except the personal homepage (`src/homepage/`, `public/me.jpeg`)
-and third-party assets (fonts, RISC-V tests, etc.), which retain their original rights/licenses.
+**License:** MIT (see [`LICENSE`](LICENSE)). Copyright (c) 2023-2026 Brendan Bycroft.
+Third-party assets (fonts, RISC-V tests, and so on) keep their own licenses.
 
 ## Projects
 

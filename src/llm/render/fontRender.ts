@@ -1,3 +1,4 @@
+import { assetUrl } from "@/src/utils/basePath";
 import { base64ToArrayBuffer } from "@/src/utils/data";
 import { Mat4f } from "@/src/utils/matrix";
 import { bindFloatAttribs, createFloatBuffer, createShaderProgram, ensureFloatBufferSize, ensureShadersReady, IFloatBuffer, IGLContext, resetFloatBufferMap, uploadFloatBuffer } from "@/src/utils/shader";
@@ -67,9 +68,9 @@ export async function fetchFontAtlasData(): Promise<IFontAtlasData> {
         imgEl.onload = () => resolve(imgEl);
         imgEl.onerror = () => reject();
     });
-    imgEl.src = 'fonts/font-atlas.png';
+    imgEl.src = assetUrl('fonts/font-atlas.png');
 
-    let fontDefP = fetch('fonts/font-def.json', { credentials: 'include', mode: 'no-cors' }).then(r => r.json());
+    let fontDefP = fetch(assetUrl('fonts/font-def.json'), { credentials: 'include', mode: 'no-cors' }).then(r => r.json());
 
     let [fontAtlasImage, fontDef] = await Promise.all([imgP, fontDefP]);
 

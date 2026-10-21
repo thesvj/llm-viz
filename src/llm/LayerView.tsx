@@ -1,4 +1,5 @@
 'use client';
+import { assetUrl } from "@/src/utils/basePath";
 
 import React, { useContext, useEffect, useLayoutEffect, useState } from 'react';
 import { IDataAndModel, IModelState, initModel } from './GptModel';
@@ -27,7 +28,7 @@ import { loadModernModels } from './arch/ModernModels';
 import { flowActive, goToStep, restoreFlowView } from './flow/flowState';
 
 async function fetchTensorData(url: string): Promise<ITensorSet> {
-    let resp = await fetch(url);
+    let resp = await fetch(assetUrl(url));
     let data = await resp.json();
     for (let k in data) {
         if (data[k].shape) {
