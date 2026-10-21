@@ -1,5 +1,6 @@
 import { cameraToMatrixView } from "../Camera";
-import { cellPosition, IGptModelLayout } from "../GptModelLayout";
+import { cellPosition } from "../GptModelLayout";
+import { ILayoutBase } from "../LayoutBase";
 import { IProgramState } from "../Program";
 import { drawText, IFontOpts, measureText, measureTextWidth, writeTextToBuffer } from "../render/fontRender";
 import { addLine, addLine2 as drawLine, drawLineSegs, ILineOpts, makeLineOpts } from "../render/lineRender";
@@ -13,7 +14,7 @@ import { lineHeight } from "./TextLayout";
 import { IColorMix } from "../Annotations";
 import { clamp } from "@/src/utils/data";
 
-export function drawModelCard(state: IProgramState, layout: IGptModelLayout, title: string, offset: Vec3) {
+export function drawModelCard(state: IProgramState, layout: ILayoutBase, title: string, offset: Vec3) {
     let { render } = state;
     let { camPos } = cameraToMatrixView(state.camera);
     let dist = camPos.dist(new Vec3(0, 0, -30)); //.add(offset));
@@ -108,7 +109,7 @@ export interface IInputBoxOpts {
     idxMixes?: IColorMix | null;
 }
 
-export function renderInputBoxes(state: IProgramState, layout: IGptModelLayout, tl: Vec3, br: Vec3, cellW: number, fontSize: number, lineOpts: ILineOpts, opts?: IInputBoxOpts) {
+export function renderInputBoxes(state: IProgramState, layout: ILayoutBase, tl: Vec3, br: Vec3, cellW: number, fontSize: number, lineOpts: ILineOpts, opts?: IInputBoxOpts) {
     let render = state.render;
     let { T } = layout.shape;
     let inCellH = br.y - tl.y;
@@ -154,7 +155,7 @@ export interface IOutputBoxOpts {
     tokMixes?: IColorMix | null;
 }
 
-export function renderOutputBoxes(state: IProgramState, layout: IGptModelLayout, tl: Vec3, br: Vec3, cellW: number, fontSize: number, lineOpts: ILineOpts, opts?: IOutputBoxOpts) {
+export function renderOutputBoxes(state: IProgramState, layout: ILayoutBase, tl: Vec3, br: Vec3, cellW: number, fontSize: number, lineOpts: ILineOpts, opts?: IOutputBoxOpts) {
     let render = state.render;
     let { T, vocabSize } = layout.shape;
     let outCellH = br.y - tl.y;

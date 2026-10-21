@@ -261,7 +261,7 @@ export function drawOLIndexLookup(args: IDataFlowArgs, offset: Vec3) {
 
 export function drawOLPosEmbedLookup(args: IDataFlowArgs, offset: Vec3) {
     let { state, center, destIdx, mtx } = args;
-    let posPct = destIdx.x / (state.layout.posEmbedObj.cx - 1);
+    let posPct = destIdx.x / ((state.layout.posEmbedObj?.cx ?? 2) - 1);
     let heightPct = destIdx.y / (state.layout.residual0.cy - 1);
 
     let pos = center.add(new Vec3(35, -20, 0));

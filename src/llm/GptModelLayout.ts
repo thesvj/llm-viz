@@ -910,6 +910,7 @@ export function genGptModelLayout(shape: IModelShape, gptGpuModel: IGptModelLink
     }
 
     return {
+        kind: 'gpt2' as const,
         cubes,
         cell,
         margin,

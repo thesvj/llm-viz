@@ -1,3 +1,4 @@
+import { gptLayout } from "../Program";
 import { addSourceDestCurveLine, blockDimension, blockIndex, drawTextOnModel, findSubBlocks, indexMappingLines, renderIndexes, splitGrid, TextAlignHoriz, TextAlignVert } from "../Annotations";
 import { ICamera, ICameraPos } from "../Camera";
 import { IBlkDef } from "../GptModelLayout";
@@ -169,7 +170,7 @@ export function runWalkthrough(state: IProgramState, view: IRenderView) {
     wt.phaseLength = 0;
     wt.dimHighlightBlocks = null;
 
-    let wtArgs: IWalkthroughArgs = { state, layout: state.layout, tools: phaseTools(state), walkthrough: wt };
+    let wtArgs: IWalkthroughArgs = { state, layout: gptLayout(state), tools: phaseTools(state), walkthrough: wt };
 
     let groupId = phaseToGroup(wt).groupId;
     if (groupId === PhaseGroup.Intro) {

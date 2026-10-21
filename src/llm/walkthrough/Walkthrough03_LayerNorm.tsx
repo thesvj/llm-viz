@@ -1,3 +1,4 @@
+import { gptLayout } from "../Program";
 import React from "react";
 import { findSubBlocks, splitGrid } from "../Annotations";
 import { drawDataFlow } from "../components/DataFlow";
@@ -24,7 +25,7 @@ export function walkthrough03_LayerNorm(args: IWalkthroughArgs) {
 
     commentary(wt, null, 0)`
 
-The  ${c_blockRef('_input embedding_', state.layout.residual0)} matrix from the previous section is the input to our first Transformer block.
+The  ${c_blockRef('_input embedding_', gptLayout(state).residual0)} matrix from the previous section is the input to our first Transformer block.
 
 The first step in the Transformer block is to apply _layer normalization_ to this matrix. This is an
 operation that normalizes the values in each column of the matrix separately.`;

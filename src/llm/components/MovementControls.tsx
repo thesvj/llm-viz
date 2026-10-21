@@ -1,3 +1,4 @@
+import { gptLayout } from "../Program";
 import { faArrowDown, faArrowLeft, faArrowRight, faArrowUp, faCircleDot, faExpand, faMagnifyingGlassMinus, faMagnifyingGlassPlus, IconDefinition } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import clsx from "clsx";
@@ -142,7 +143,7 @@ export function getCurrentNavLevel(state: IProgramState, navLevels: INavLevel): 
 }
 
 export function manageMovement(state: IProgramState, view: IRenderView) {
-    let navLevels = constructNavLevels(state.layout);
+    let navLevels = constructNavLevels(gptLayout(state));
 
     let current = getCurrentNavLevel(state, navLevels) ?? { level: navLevels, parent: null, depth: 0, parents: [] };
     let mvmt = state.movement;

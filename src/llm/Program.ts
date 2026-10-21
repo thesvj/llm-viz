@@ -4,6 +4,7 @@ import { drawBlockLabels } from "./components/SectionLabels";
 import { drawModelCard } from "./components/ModelCard";
 import { IGptModelLink, IGpuGptModel, IModelShape } from "./GptModel";
 import { genGptModelLayout, IBlkDef, IGptModelLayout } from "./GptModelLayout";
+import { ILayoutBase } from "./LayoutBase";
 import { drawText, IFontAtlasData, IFontOpts, measureText } from "./render/fontRender";
 import { initRender, IRenderState, IRenderView, renderModel, resetRenderBuffers } from "./render/modelRender";
 import { beginQueryAndGetPrevMs, endQuery } from "./render/queryManager";
@@ -34,7 +35,7 @@ export interface IProgramState {
     walkthrough: ReturnType<typeof initWalkthrough>;
     camera: ICamera;
     htmlSubs: Subscriptions;
-    layout: IGptModelLayout;
+    layout: ILayoutBase;
     mainExample: IModelExample;
     examples: IModelExample[];
     currExampleId: number;
@@ -265,7 +266,7 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     state.render.renderTiming = false; // state.pageLayout.isDesktop;
 
     // will modify layout; view; render a few things.
-    if (state.inWalkthrough) {
+    if (state.inWalkthrough && state.layout.kind === 'gpt2') {
         runWalkthrough(state, view);
     }
 
@@ -273,7 +274,9 @@ export function runProgram(view: IRenderView, state: IProgramState) {
 
     drawBlockInfo(state);
     // these will get modified by the walkthrough (stored where?)
-    drawAllArrows(state.render, state.layout);
+    if (state.layout.kind === 'gpt2') {
+        drawAllArrows(state.render, gptLayout(state));
+    }
 
     drawModelCard(state, state.layout, 'nano-gpt', new Vec3());
     // drawTokens(state.render, state.layout, state.display);
@@ -287,7 +290,9 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     // manageMovement(state, view);
     runMouseHitTesting(state);
     state.render.sharedRender.activePhase = RenderPhase.Opaque;
-    drawBlockLabels(state.render, state.layout);
+    if (state.layout.kind === 'gpt2') {
+        drawBlockLabels(state.render, gptLayout(state));
+    }
 
     let lineNo = 1;
     let tw = state.render.size.x;
@@ -307,4 +312,12 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     state.render.gl.flush();
 
     state.render.lastJsMs = performance.now() - timer0;
+}
+
+/** The GPT-2 layout. Only valid in Classic mode (walkthrough, arrows, section labels). */
+export function gptLayout(state: IProgramState): IGptModelLayout {
+    if (state.layout.kind !== 'gpt2') {
+        throw new Error('gptLayout() called while a non-GPT-2 model is shown');
+    }
+    return state.layout as IGptModelLayout;
 }

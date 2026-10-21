@@ -1,3 +1,4 @@
+import { gptLayout } from "../Program";
 import { IWalkthrough, Phase } from "./Walkthrough";
 import { Colors, commentary, DimStyle, dimStyleColor, embed, ITimeInfo, IWalkthroughArgs, moveCameraTo, phaseTools, setInitialCamera } from "./WalkthroughTools";
 import s from './Walkthrough.module.scss';
@@ -234,7 +235,7 @@ interface IProcessInfo {
 }
 
 export function startProcessBefore(state: IProgramState, block: IBlkDef): IProcessInfo {
-    let activeBlocks = state.layout.cubes.filter(a => a.t !== 'w');
+    let activeBlocks = gptLayout(state).cubes.filter(a => a.t !== 'w');
 
     return {
         lastBlockIdx: activeBlocks.indexOf(block) - 1,
@@ -243,7 +244,7 @@ export function startProcessBefore(state: IProgramState, block: IBlkDef): IProce
 
 export function processUpTo(state: IProgramState, timer: ITimeInfo, block: IBlkDef, prevInfo?: IProcessInfo): IProcessInfo {
 
-    let activeBlocks = state.layout.cubes.filter(a => a.t !== 'w');
+    let activeBlocks = gptLayout(state).cubes.filter(a => a.t !== 'w');
 
     let firstIdx = prevInfo ? prevInfo.lastBlockIdx + 1 : 0;
     let lastIdx = activeBlocks.indexOf(block);
@@ -290,7 +291,7 @@ export function processUpTo(state: IProgramState, timer: ITimeInfo, block: IBlkD
     let blockPos = new Vec3().withSetAt(dim0, horizIdx).withSetAt(dim1, vertIdx); // new Vec3(horizIdx, vertIdx, 0);
     let pinPos = new Vec3(Math.floor(cx / 2), 0, 0);
 
-    if (blk === state.layout.residual0) {
+    if (blk === gptLayout(state).residual0) {
         pinPos = new Vec3(cx * 2, -2, 0);
     }
 
@@ -309,7 +310,7 @@ export function processUpTo(state: IProgramState, timer: ITimeInfo, block: IBlkD
         drawDependences(state, blk, blockPos);
         drawDataFlow(state, blk, blockPos, pinPos);
 
-        for (let label of state.layout.labels) {
+        for (let label of gptLayout(state).labels) {
             for (let c of label.cubes) {
                 if (c === blk) {
                     label.visible = 1.0;
@@ -319,7 +320,7 @@ export function processUpTo(state: IProgramState, timer: ITimeInfo, block: IBlkD
 
         blk.highlight = 0.3;
 
-        let column = splitGrid(state.layout, blk, dim0, horizPos, 0);
+        let column = splitGrid(gptLayout(state), blk, dim0, horizPos, 0);
         if (column) {
             for (let col of findSubBlocks(blk, dim0, null, horizIdx)) {
                 if (col.access) {
@@ -329,7 +330,7 @@ export function processUpTo(state: IProgramState, timer: ITimeInfo, block: IBlkD
             }
             column.highlight = 0.4;
 
-            let curr = splitGrid(state.layout, column, dim1, vertPos, 0);
+            let curr = splitGrid(gptLayout(state), column, dim1, vertPos, 0);
             for (let blk of findSubBlocks(column, dim1, null, vertIdx)) {
                 if (blk.access) {
                     blk.access.disable = false;
