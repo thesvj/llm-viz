@@ -7,6 +7,9 @@ import { Commentary } from './Commentary';
 import { IProgramState } from './Program';
 import { Popup, PopupPos } from '@/src/utils/Portal';
 import { useSubscriptions } from '../utils/hooks';
+import { FlowGuide } from './flow/FlowGuide';
+import { flowActive, goToStep } from './flow/flowState';
+import { PresetFacts } from './flow/PresetFacts';
 
 export const WalkthroughSidebar: React.FC = () => {
     let progState = useProgramState();
@@ -60,6 +63,31 @@ export const WalkthroughSidebar: React.FC = () => {
             </div> */}
         </div>
     </>;
+
+    let preset = progState.examples[progState.currExampleId];
+    if (preset?.preset) {
+        let back = () => {
+            let mode = progState.modelMode === 'gpt2' ? 'llama' : progState.modelMode;
+            let rt = progState.modern[mode];
+            progState.currExampleId = -1;
+            if (rt) {
+                progState.modelMode = mode;
+                progState.flow.token = rt.inputLen - 1;
+                // the modern layout is rebuilt on the next frame; frame the current step after that
+                setTimeout(() => goToStep(progState, progState.flow.step), 100);
+            }
+            progState.markDirty();
+        };
+        return <div className={s.walkthrough}>
+            <div className={s.content}><PresetFacts name={preset.name} sub={preset.sub} config={preset.preset} onBack={back} /></div>
+        </div>;
+    }
+
+    if (flowActive(progState)) {
+        return <div className={s.walkthrough}>
+            <div className={s.content}><FlowGuide /></div>
+        </div>;
+    }
 
     return <div className={s.walkthrough}>
         <div className={s.split}>

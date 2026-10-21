@@ -1,6 +1,6 @@
 import { createBufferTex, IBufferTex, writeToBufferTex } from "@/src/utils/renderPhases";
 import { IModelRuntimeLink } from "../LayoutBase";
-import { decodeTensorJson, IModernConfig, IModernWeights, ITensor, ITensorMap, modernForward } from "./ModernForward";
+import { decodeTensorJson, IModernConfig, IModernWeights, ITensor, ITensorMap, logitLens, modernForward } from "./ModernForward";
 
 /** A tiny modern model running in the page: weights + latest activations, each tensor in its own texture. */
 export interface IModernRuntime extends IModelRuntimeLink {
@@ -10,6 +10,43 @@ export interface IModernRuntime extends IModelRuntimeLink {
     tokens: number[];          // length = block_size; positions >= inputLen are padding
     rec: ITensorMap;           // activations from the latest run
     tex: Record<string, IBufferTex>; // 'w:<weight name>' for weights, '<activation name>' for activations
+    /** Logit lens per residual snapshot (embed, then resid1/resid2 of each layer): [T, V] probabilities. */
+    lens: { name: string, probs: ITensor }[];
+    /** The last generation step: how the token was picked, and whether the cached K/V stayed the same. */
+    lastStep: ISampleInfo | null;
+    rngState: number;
+}
+
+export interface ISampleInfo {
+    pos: number;            // position whose prediction was used
+    temperature: number;
+    probs: number[];        // probabilities after temperature
+    draw: number;           // the random number in [0, 1)
+    picked: number;         // chosen token id
+    cacheCols: number;      // number of earlier positions whose K/V were reused
+    cacheSame: boolean;     // true when those K/V columns are bit-identical to the previous run
+}
+
+/** Small seeded random generator (mulberry32), so a run can be repeated exactly. */
+function nextRandom(rt: IModernRuntime): number {
+    let t = (rt.rngState = (rt.rngState + 0x6D2B79F5) | 0);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/** softmax(logits / temperature) for one position. Temperature 0 = always the top token. */
+export function tempProbs(rt: IModernRuntime, pos: number, temperature: number): number[] {
+    let V = rt.model.config.vocab_size;
+    let lg = Array.from(rt.rec['logits'].data.slice(pos * V, pos * V + V));
+    if (temperature <= 0) {
+        let best = lg.indexOf(Math.max(...lg));
+        return lg.map((_, i) => i === best ? 1 : 0);
+    }
+    let m = Math.max(...lg);
+    let e = lg.map(v => Math.exp((v - m) / temperature));
+    let s = e.reduce((a, b) => a + b, 0);
+    return e.map(v => v / s);
 }
 
 /** Texture for a tensor: last dim = width, all other dims flattened = height. */
@@ -44,6 +81,7 @@ export function createModernRuntime(gl: WebGL2RenderingContext, name: string, js
     let rt: IModernRuntime = {
         gl, name, model, tokens, rec: {}, tex: {},
         inputTokens: null!, inputLen: initial.length, sortedBuf: null,
+        lens: [], lastStep: null, rngState: 12345,
     };
     for (let [k, t] of Object.entries(model.w)) {
         texFor(rt, 'w:' + k, t);
@@ -72,18 +110,56 @@ export function runModern(rt: IModernRuntime) {
         opts.forEach((o, j) => { sorted[(t * V + j) * 2] = o.i; sorted[(t * V + j) * 2 + 1] = o.v; });
     }
     rt.sortedBuf = sorted;
+
+    let snaps = ['embed'];
+    for (let l = 0; l < config.n_layer; l++) snaps.push(`l${l}.resid1`, `l${l}.resid2`);
+    rt.lens = snaps.map(name => ({ name, probs: logitLens(rt.model, rt.rec[name]) }));
 }
 
-/** Append the most likely next token and re-run (one generation step). */
-export function stepModern(rt: IModernRuntime) {
-    let T = rt.model.config.block_size;
-    if (!rt.sortedBuf || rt.inputLen >= T) {
+/** One generation step: sample the next token from the last real position (with temperature), append it, re-run.
+ *  Also checks the KV-cache idea: keys and values of earlier positions must not change. */
+export function stepModern(rt: IModernRuntime, temperature = 0) {
+    let { config } = rt.model;
+    let T = config.block_size;
+    if (rt.inputLen >= T) {
         return;
     }
-    let V = rt.model.config.vocab_size;
-    rt.tokens[rt.inputLen] = rt.sortedBuf[(rt.inputLen - 1) * V * 2];
+    let pos = rt.inputLen - 1;
+    let probs = tempProbs(rt, pos, temperature);
+    let draw = nextRandom(rt);
+    let picked = probs.length - 1;
+    for (let i = 0, acc = 0; i < probs.length; i++) {
+        acc += probs[i];
+        if (draw < acc) { picked = i; break; }
+    }
+
+    // keep the K and V of the positions we already had
+    let A = config.head_dim ?? config.n_embd / config.n_head;
+    let before: Float32Array[] = [];
+    for (let l = 0; l < config.n_layer; l++) {
+        before.push(rt.rec[`l${l}.attn.k_rope`].data.slice(), rt.rec[`l${l}.attn.v`].data.slice());
+    }
+
+    rt.tokens[rt.inputLen] = picked;
     rt.inputLen += 1;
     runModern(rt);
+
+    let cacheCols = rt.inputLen - 1;
+    let cacheSame = true;
+    for (let l = 0; l < config.n_layer; l++) {
+        let after = [rt.rec[`l${l}.attn.k_rope`].data, rt.rec[`l${l}.attn.v`].data];
+        for (let j = 0; j < 2; j++) {
+            let a = before[2 * l + j], b = after[j];
+            // layout [nKV, T, A]: compare columns t < cacheCols in every head
+            for (let h = 0; h < config.n_kv_head; h++)
+                for (let t = 0; t < cacheCols; t++)
+                    for (let c = 0; c < A; c++) {
+                        let i = (h * T + t) * A + c;
+                        if (a[i] !== b[i]) cacheSame = false;
+                    }
+        }
+    }
+    rt.lastStep = { pos, temperature, probs, draw, picked, cacheCols, cacheSame };
 }
 
 /** Replace the prompt (letters A/B/C as ids 0..2) and re-run. */
@@ -91,5 +167,6 @@ export function setModernPrompt(rt: IModernRuntime, ids: number[]) {
     let T = rt.model.config.block_size;
     rt.tokens = Array.from({ length: T }, (_, i) => ids[i] ?? 0);
     rt.inputLen = Math.max(1, Math.min(ids.length, T));
+    rt.lastStep = null;
     runModern(rt);
 }

@@ -119,7 +119,7 @@ export interface ILabelOpts {
     pad?: number;
 }
 
-function drawSectionLabel(state: IRenderState, text: string, tl: Vec3, br: Vec3, opts: ILabelOpts) {
+export function drawSectionLabel(state: IRenderState, text: string, tl: Vec3, br: Vec3, opts: ILabelOpts) {
     let mtx = new Mat4f();
     mtx[14] = (tl.z + br.z) / 2;
 

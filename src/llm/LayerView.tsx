@@ -24,6 +24,7 @@ import { ViewPanel } from './components/ViewPanel';
 import { AttentionPanel } from './components/AttentionPanel';
 import { explainCell } from './CellExplain';
 import { loadModernModels } from './arch/ModernModels';
+import { flowActive, goToStep, restoreFlowView } from './flow/flowState';
 
 async function fetchTensorData(url: string): Promise<ITensorSet> {
     let resp = await fetch(url);
@@ -67,6 +68,20 @@ export function LayerView() {
             return;
         }
         let key = ev.key.toLowerCase();
+        let ps = canvasRender.progState;
+        if (flowActive(ps)) {
+            // step-by-step guide for the modern models
+            if (ev.key === ' ' || key === 'n' || key === ']') {
+                goToStep(ps, ps.flow.step + 1);
+                ev.preventDefault();
+                return;
+            }
+            if (key === 'p' || key === '[') {
+                goToStep(ps, ps.flow.step - 1);
+                ev.preventDefault();
+                return;
+            }
+        }
         let wt = canvasRender.progState.walkthrough;
         let mvmt = canvasRender.progState.movement;
         if (ev.key === ' ') {
@@ -252,6 +267,10 @@ class CanvasRender {
         if (this.progState.render) {
             loadModernModels(this.progState.render.gl).then(models => {
                 this.progState.modern = models;
+                if (restoreFlowView(this.progState)) {
+                    // the modern layout is built on the next frame; frame the saved step after that
+                    setTimeout(() => goToStep(this.progState, this.progState.flow.step), 250);
+                }
                 this.markDirty();
             });
         }

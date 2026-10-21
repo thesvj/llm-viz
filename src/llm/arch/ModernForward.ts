@@ -16,6 +16,11 @@ export interface IModernConfig {
     top_k?: number;
     arch: 'llama' | 'moe';
     n_params?: number;
+    // shape-only presets of real models (not used by the tiny trained models)
+    head_dim?: number;        // when not n_embd / n_head
+    tied?: boolean;           // LM head shares the token embedding matrix
+    qk_norm?: boolean;        // RMS norm on each Q and K head (Qwen3)
+    sliding_window?: number;  // each token attends only to this many previous tokens (Mistral)
 }
 
 export interface ITensor {
@@ -262,5 +267,18 @@ export function decodeTensorJson(obj: Record<string, any>): ITensorMap {
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         out[k] = { shape: v.shape, data: new Float32Array(bytes.buffer) };
     }
+    return out;
+}
+
+/** Logit lens: what the model would predict if it stopped at this point of the residual stream.
+ *  Applies the final RMS norm and the LM head to `resid` [T, C], then softmax → [T, V].
+ *  A probe for the guide, not part of the model. On the last residual it equals rec['probs']. */
+export function logitLens(model: IModernWeights, resid: ITensor): ITensor {
+    let { w, config } = model;
+    let n = rmsNorm(resid, w['norm_f.weight'], config.norm_eps);
+    let logits = linear(n.out, w['lm_head.weight']);
+    let [T, V] = logits.shape;
+    let out = tensor([T, V]);
+    softmaxRows(logits.data, T, V, out.data);
     return out;
 }

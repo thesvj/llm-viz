@@ -14,12 +14,15 @@ import { lineHeight } from "./TextLayout";
 import { IColorMix } from "../Annotations";
 import { clamp } from "@/src/utils/data";
 
-export function drawModelCard(state: IProgramState, layout: ILayoutBase, title: string, offset: Vec3) {
+/** scaleToCard: size the card by the camera's distance to the card itself (used for the far-away presets),
+ *  instead of the distance to the origin (original behaviour). */
+export function drawModelCard(state: IProgramState, layout: ILayoutBase, title: string, offset: Vec3, scaleToCard = false) {
     let { render } = state;
     let { camPos } = cameraToMatrixView(state.camera);
-    let dist = camPos.dist(new Vec3(0, 0, -30)); //.add(offset));
+    let cardPos = scaleToCard ? state.camera.modelMtx.mulVec3Proj(offset) : new Vec3();
+    let dist = camPos.dist(cardPos.add(new Vec3(0, 0, -30)));
 
-    let scale = clamp(dist / 500.0, 1.0, 800.0);
+    let scale = clamp(dist / 500.0, 1.0, scaleToCard ? 1e5 : 800.0);
 
     let pinY = -60;
     let mtx = Mat4f.fromScaleTranslation(new Vec3(scale, scale, scale), new Vec3(0, pinY, 0).add(offset))
@@ -37,7 +40,8 @@ export function drawModelCard(state: IProgramState, layout: ILayoutBase, title: 
     let br = new Vec3( 45, -70, 0);
     drawLineRect(render, tl, br, lineOpts);
 
-    addQuad(render.triRender, new Vec3(tl.x, tl.y, -0.1), new Vec3(br.x, br.y, -0.1), backgroundColor, mtx);
+    // background sits well behind the text: at far zoom a tiny gap is lost to depth precision and hides the text
+    addQuad(render.triRender, new Vec3(tl.x, tl.y, -8), new Vec3(br.x, br.y, -8), backgroundColor, mtx);
 
     // let w = measureTextWidth(state.modelFontBuf, title, .0);
     let { B, C, T, A, nBlocks, nHeads, vocabSize } = layout.shape;

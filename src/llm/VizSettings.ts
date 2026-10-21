@@ -67,15 +67,20 @@ export function depSources(blk: IBlkDef): IBlkDef[] {
     return [...(d.dot?.map(a => a.src) ?? []), ...(d.add?.map(a => a.src) ?? [])];
 }
 
-/** Focus mode: keep the target, its inputs and its outputs; dim the rest. */
-export function applyFocus(layout: IModelLayout, target: IBlkDef | null) {
-    if (!target) {
+/** Focus mode: keep the target(s), and for a single target also its inputs and outputs; dim the rest. */
+export function applyFocus(layout: IModelLayout, target: IBlkDef | IBlkDef[] | null) {
+    if (!target || (Array.isArray(target) && target.length === 0)) {
         return;
     }
-    let keep = new Set<IBlkDef>([target, ...depSources(target)]);
-    for (let blk of layout.cubes) {
-        if (depSources(blk).includes(target)) {
-            keep.add(blk);
+    let keep: Set<IBlkDef>;
+    if (Array.isArray(target)) {
+        keep = new Set(target);
+    } else {
+        keep = new Set<IBlkDef>([target, ...depSources(target)]);
+        for (let blk of layout.cubes) {
+            if (depSources(blk).includes(target)) {
+                keep.add(blk);
+            }
         }
     }
     function dim(c: IBlkDef) {

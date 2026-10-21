@@ -5,9 +5,13 @@ import { drawModelCard } from "./components/ModelCard";
 import { IGptModelLink, IGpuGptModel, IModelShape } from "./GptModel";
 import { genGptModelLayout, IBlkDef, IGptModelLayout } from "./GptModelLayout";
 import { ILayoutBase } from "./LayoutBase";
-import { IModelMode } from "./arch/ModernModels";
+import { IModelMode, modelModeInfo } from "./arch/ModernModels";
 import { IModernRuntime, stepModern } from "./arch/ModernRuntime";
-import { genModernLayout } from "./arch/ModernLayout";
+import { IModernConfig } from "./arch/ModernForward";
+import { archPresets, countParams } from "./arch/ArchPresets";
+import { genModernLayout, IModernLayout } from "./arch/ModernLayout";
+import { drawModernLabels } from "./arch/ModernLabels";
+import { flowActive, flowFocusBlocks } from "./flow/flowState";
 import { applyFocus, applyValueRanges, defaultVizSettings, IVizSettings } from "./VizSettings";
 import { drawText, IFontAtlasData, IFontOpts, measureText } from "./render/fontRender";
 import { initRender, IRenderState, IRenderView, renderModel, resetRenderBuffers } from "./render/modelRender";
@@ -51,15 +55,33 @@ export interface IProgramState {
     viz: IVizSettings;
     modelMode: IModelMode;
     modern: Partial<Record<IModelMode, IModernRuntime>>;
+    flow: IFlowState;
     pageLayout: ILayout;
     markDirty: () => void;
 }
 
+function paramLine(c: IModernConfig) {
+    let n = countParams(c);
+    let b = (x: number) => `${(x / 1e9).toFixed(2)}B`;
+    return c.n_expert ? `${b(n.total)} parameters, ${b(n.active)} used per token` : `${b(n.total)} parameters`;
+}
+
+/** Step-by-step guide state (modern models). */
+export interface IFlowState {
+    step: number;        // index into buildFlowSteps()
+    layer: number;       // which layer the guide walks through
+    token: number;       // the token position the guide follows (MoE experts, logit lens, cache)
+    temperature: number; // sampling temperature for "Next token"
+}
+
 export interface IModelExample {
     name: string;
+    sub?: string;            // one-line description shown under the model selector
+    hidden?: boolean;        // not offered in the selector (GPT-3 is huge; kept for reference)
     shape: IModelShape;
     enabled: boolean;
-    layout?: IGptModelLayout;
+    layout?: ILayoutBase;
+    preset?: IModernConfig;  // set for Llama-style shape-only models
     blockRender: IBlockRender;
     offset: Vec3;
     modelCardOffset: Vec3;
@@ -196,7 +218,18 @@ export function initProgramState(canvasEl: HTMLCanvasElement, fontAtlasData: IFo
             modelCardOffset: delta.mul(15.0),
             blockRender: initBlockRender(render?.ctx ?? null),
             camera: makeCamera(new Vec3(837678.163, 0.000, -485242.286), new Vec3(238.959, 10.501, 12583.939)),
-        }],
+        },
+        // Llama-family models, shape only (no weights): placed further along x, cameras set when first shown
+        ...archPresets.map((p, i): IModelExample => ({
+            name: p.title,
+            sub: p.sub + '. ' + paramLine(p.config),
+            enabled: false,
+            preset: p.config,
+            shape: { B: 1, T: p.config.block_size, C: p.config.n_embd, nHeads: p.config.n_head, A: p.config.head_dim ?? p.config.n_embd / p.config.n_head, nBlocks: p.config.n_layer, vocabSize: p.config.vocab_size },
+            offset: delta.mul(80 + i * 40),
+            modelCardOffset: new Vec3(),
+            blockRender: initBlockRender(render?.ctx ?? null),
+        }))],
         gptGpuModel: null,
         jsGptModel: null,
         stepModel: false,
@@ -216,6 +249,7 @@ export function initProgramState(canvasEl: HTMLCanvasElement, fontAtlasData: IFo
         viz: defaultVizSettings(),
         modelMode: 'gpt2',
         modern: {},
+        flow: { step: 0, layer: 0, token: 0, temperature: 1 },
         display: {
             tokenColors: null,
             tokenIdxColors: null,
@@ -257,7 +291,7 @@ export function runProgram(view: IRenderView, state: IProgramState) {
 
     if (state.stepModel && modernRt) {
         state.stepModel = false;
-        stepModern(modernRt);
+        stepModern(modernRt, state.flow.temperature);
     } else if (state.stepModel && state.wasmGptModel && state.jsGptModel) {
         state.stepModel = false;
         stepWasmModel(state.wasmGptModel, state.jsGptModel);
@@ -278,8 +312,9 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     // Maybe need to copy a lot of different things like the entire render state per model?
     for (let example of state.examples) {
         if (example.enabled && !example.layout) {
-            let layout = genGptModelLayout(example.shape, null, example.offset);
-            example.layout = layout;
+            example.layout = example.preset
+                ? genModernLayout(example.preset, null, new Vec3(), 8)
+                : genGptModelLayout(example.shape, null, example.offset);
         }
     }
 
@@ -299,18 +334,17 @@ export function runProgram(view: IRenderView, state: IProgramState) {
 
     updateCamera(state, view);
 
-    drawBlockInfo(state);
     // these will get modified by the walkthrough (stored where?)
     if (state.layout.kind === 'gpt2') {
         drawAllArrows(state.render, gptLayout(state));
     }
 
-    drawModelCard(state, state.layout, modernRt ? `tiny-${modernRt.name}` : 'nano-gpt', new Vec3());
+    drawModelCard(state, state.layout, modelModeInfo[state.modelMode].title, new Vec3());
     // drawTokens(state.render, state.layout, state.display);
 
     for (let example of state.examples) {
         if (example.enabled && example.layout) {
-            drawModelCard(state, example.layout, example.name, example.offset.add(example.modelCardOffset));
+            drawModelCard(state, example.layout, example.name, example.offset.add(example.modelCardOffset), !!example.preset);
         }
     }
 
@@ -319,11 +353,15 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     if (state.viz.focus) {
         let hover = state.display.hoverTarget as IHoverTarget | null; // set by runMouseHitTesting
         let pinnedCube = state.display.pinned ? state.layout.cubes[state.display.pinned.cubeIdx] ?? null : null;
-        applyFocus(state.layout, hover?.mainCube ?? pinnedCube);
+        let target = hover?.mainCube ?? pinnedCube;
+        applyFocus(state.layout, target ?? (flowActive(state) ? flowFocusBlocks(state) : null));
     }
+    drawBlockInfo(state); // after focus, so dimmed blocks get no name tag
     state.render.sharedRender.activePhase = RenderPhase.Opaque;
     if (state.layout.kind === 'gpt2') {
         drawBlockLabels(state.render, gptLayout(state));
+    } else {
+        drawModernLabels(state.render, state.layout as IModernLayout);
     }
 
     let lineNo = 1;

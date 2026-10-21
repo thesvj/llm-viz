@@ -112,13 +112,12 @@ export function setupFontAtlas(ctx: IGLContext, data: IFontAtlasData) {
         void main() {
             int texWidth = textureSize(u_transformTex, 0).x;
             int texOffset = int(a_textId) * ${floatsPerSegment / 4};
-            int y = texOffset / texWidth;
-            int x = texOffset % texWidth;
-            vec4 t0 = texelFetch(u_transformTex, ivec2(x + 0, y), 0);
-            vec4 t1 = texelFetch(u_transformTex, ivec2(x + 1, y), 0);
-            vec4 t2 = texelFetch(u_transformTex, ivec2(x + 2, y), 0);
-            vec4 t3 = texelFetch(u_transformTex, ivec2(x + 3, y), 0);
-            vec4 c = texelFetch(u_transformTex, ivec2(x + 4, y), 0);
+            // each texel gets its own row/column, so a segment may span two texture rows
+            vec4 t0 = texelFetch(u_transformTex, ivec2((texOffset + 0) % texWidth, (texOffset + 0) / texWidth), 0);
+            vec4 t1 = texelFetch(u_transformTex, ivec2((texOffset + 1) % texWidth, (texOffset + 1) / texWidth), 0);
+            vec4 t2 = texelFetch(u_transformTex, ivec2((texOffset + 2) % texWidth, (texOffset + 2) / texWidth), 0);
+            vec4 t3 = texelFetch(u_transformTex, ivec2((texOffset + 3) % texWidth, (texOffset + 3) / texWidth), 0);
+            vec4 c = texelFetch(u_transformTex, ivec2((texOffset + 4) % texWidth, (texOffset + 4) / texWidth), 0);
             mat4 transform = mat4(t0, t1, t2, t3);
 
             gl_Position = u_view * u_model * transform * vec4(a_position, 0.0, 1.0);
@@ -262,7 +261,7 @@ export function createFontBuffers(atlas: IFontAtlas, sharedRender: ISharedRender
     ]);
     let vertBuffer = createFloatBuffer(gl, gl.ARRAY_BUFFER, vertVbo, glyphCapacity, bytesPerVert, sharedRender);
 
-    let localTexBuffer = new Float32Array(segmentCapacity * floatsPerSegment);
+    let localTexBuffer = new Float32Array(texFloatsFor(segmentCapacity));
 
     return {
         atlas,
@@ -279,6 +278,11 @@ export function createFontBuffers(atlas: IFontAtlas, sharedRender: ISharedRender
 
 export function computeTexHeight(numSegments: number) {
     return Math.ceil(numSegments * floatsPerSegment / 4 / texWidth);
+}
+
+/** Floats needed to hold numSegments, rounded up to whole texture rows (texSubImage2D uploads full rows). */
+function texFloatsFor(numSegments: number) {
+    return computeTexHeight(numSegments) * texWidth * 4;
 }
 
  // Fudge factor to get it the same as HTML/CSS at the same px size
@@ -325,10 +329,6 @@ export function writeTextToBuffer(fontBuf: IFontBuffers, text: string, color: Ve
     let phase = fontBuf.sharedRender.activePhase;
     let vertBuf = fontBuf.vertBuffer.localBufs[phase];
     ensureFloatBufferSize(vertBuf, text.length * floatsPerVert);
-    if (fontBuf.segmentsUsed === Math.floor(texWidth * 4 / floatsPerSegment)) {
-        // the last segment on each texel row would overflow (it takes 5 texels), so we skip it
-        fontBuf.segmentsUsed += 1;
-    }
     let segmentId = fontBuf.segmentsUsed;
     let buf = vertBuf.buf;
     let bufIdx = vertBuf.usedEls * fontBuf.vertBuffer.strideFloats;
@@ -381,9 +381,10 @@ export function writeTextToBuffer(fontBuf: IFontBuffers, text: string, color: Ve
 
     if (fontBuf.segmentsUsed >= fontBuf.segmentCapacity) {
         let newCapacity = fontBuf.segmentCapacity * 2;
-        let newBuf = new Float32Array(newCapacity * floatsPerSegment);
+        let newBuf = new Float32Array(texFloatsFor(newCapacity));
         newBuf.set(fontBuf.localTexBuffer);
         fontBuf.localTexBuffer = newBuf;
+        fontBuf.segmentCapacity = newCapacity;
     }
 
     fontBuf.localTexBuffer.set(mtx, fontBuf.segmentsUsed * floatsPerSegment + 0);
@@ -399,16 +400,15 @@ export function uploadAllText(fontBuf: IFontBuffers) {
     gl.bindTexture(gl.TEXTURE_2D, fontBuf.transformTex);
 
     if (fontBuf.segmentCapacity > fontBuf.glSegmentCapacity) {
-        let w = 1024;
-        let h = Math.ceil(fontBuf.segmentCapacity * floatsPerSegment / 4 / w);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
-        fontBuf.glSegmentCapacity = w * h / 4;
+        let h = computeTexHeight(fontBuf.segmentCapacity);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, texWidth, h, 0, gl.RGBA, gl.FLOAT, null);
+        fontBuf.glSegmentCapacity = fontBuf.segmentCapacity;
     }
 
-    {
-        let w = 1024;
-        let h = Math.ceil(fontBuf.segmentsUsed * floatsPerSegment / 4 / w);
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.FLOAT, fontBuf.localTexBuffer);
+    let h = computeTexHeight(fontBuf.segmentsUsed);
+    if (h > 0) {
+        // localTexBuffer is sized in whole texture rows, so h rows always fit
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, texWidth, h, gl.RGBA, gl.FLOAT, fontBuf.localTexBuffer);
     }
 
     uploadFloatBuffer(gl, fontBuf.vertBuffer);
