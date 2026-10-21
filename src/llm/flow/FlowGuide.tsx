@@ -5,8 +5,13 @@ import { IProgramState } from '../Program';
 import { IModernLayout } from '../arch/ModernLayout';
 import { IModernRuntime, setModernPrompt, tempProbs } from '../arch/ModernRuntime';
 import { modelModeInfo } from '../arch/ModernModels';
-import { IFlowStep } from './FlowSteps';
-import { expertsUsed, flowRuntime, flowSteps, goToStep } from './flowState';
+import { FlowText, IFlowStep } from './FlowSteps';
+import { expertsUsed, flowRuntime, flowSteps, goToStep, saveFlowView } from './flowState';
+import { animBlocks, animCursor, playPause, stepDuration } from './flowAnim';
+import { flyToBlocks } from './flowCamera';
+import { IBlkDef } from '../GptModelLayout';
+import { DimStyle, dimStyleColor } from '../walkthrough/WalkthroughTools';
+import { isNotNil } from '@/src/utils/data';
 
 const letter = (id: number) => String.fromCharCode(65 + id);
 const pct = (p: number) => `${(p * 100).toFixed(p > 0.995 || p < 0.005 ? 0 : 1)}%`;
@@ -60,7 +65,8 @@ export const FlowGuide: React.FC = () => {
                 <div className='text-[11px] font-semibold uppercase tracking-wide text-gray-500'>{step.group} · step {idx + 1} of {steps.length}</div>
                 <h2 className='text-xl font-semibold mt-0.5 mb-1'>{step.title}</h2>
                 {step.shape && <div className='inline-block text-xs font-mono bg-gray-100 text-gray-700 rounded px-1.5 py-0.5 mb-2'>{step.shape}</div>}
-                {step.text.map((t, i) => <p key={i} className='mb-2 leading-relaxed'>{t}</p>)}
+                <Playback state={state} rt={rt} />
+                {step.text.map((t, i) => <p key={i} className='mb-2 leading-relaxed'><Para state={state} text={t} /></p>)}
                 {step.vsGpt2 && <div className='my-3 border-l-4 border-blue-300 bg-blue-50 px-3 py-2 text-sm'>
                     <div className='font-semibold text-blue-900 text-xs uppercase tracking-wide mb-0.5'>Compared with GPT-2</div>
                     {step.vsGpt2}
@@ -71,7 +77,8 @@ export const FlowGuide: React.FC = () => {
                 </div>}
                 {step.panel && <div className='mt-3'><Panel state={state} rt={rt} layout={layout} step={step} /></div>}
                 <div className='mt-4 pt-2 border-t border-gray-100 text-xs text-gray-500'>
-                    Hover any block to see how one number is computed. Keys: <Kbd>Space</Kbd> or <Kbd>N</Kbd> next, <Kbd>P</Kbd> back.
+                    Coloured words are linked: hover to light up the block, click to fly to it. Hover any block to see how one number is computed.
+                    Keys: <Kbd>Space</Kbd> play, pause or next, <Kbd>N</Kbd> next, <Kbd>P</Kbd> back.
                 </div>
             </article>
         </div>
@@ -140,6 +147,7 @@ const Panel: React.FC<{ state: IProgramState, rt: IModernRuntime, layout: IModer
     case 'tokens':
         return <Box title={`Prompt: ${rt.inputLen} tokens, ${T - rt.inputLen} empty slots`}>
             <TokenRow state={state} rt={rt} showIds />
+            <PromptEditor state={state} rt={rt} />
             <div className='text-xs text-gray-500 mt-2'>Dashed slots are empty. The model still computes them, but no real token ever looks at them, so they do not affect the answer.</div>
         </Box>;
 
@@ -317,4 +325,114 @@ const Panel: React.FC<{ state: IProgramState, rt: IModernRuntime, layout: IModer
     }
     }
     return null;
+};
+
+const blockColor = (b: IBlkDef) =>
+    dimStyleColor(b.t === 'i' ? DimStyle.Intermediates : b.t === 'w' ? DimStyle.Weights : DimStyle.Aggregates).toHexColor();
+
+/** One paragraph of step text. Linked words light up their blocks on hover and fly the camera there on click. */
+const Para: React.FC<{ state: IProgramState, text: FlowText }> = ({ state, text }) => {
+    if (typeof text === 'string') {
+        return <>{text}</>;
+    }
+    let hovered = state.display.blkIdxHover ?? [state.display.hoverTarget?.mainCube.idx].filter(isNotNil);
+    return <>{text.map((part, i) => {
+        if (typeof part === 'string') {
+            return <React.Fragment key={i}>{part}</React.Fragment>;
+        }
+        let idxs = part.blks.map(b => b.idx);
+        let lit = idxs.some(x => hovered.includes(x));
+        let color = part.blks[0] ? blockColor(part.blks[0]) : undefined;
+        return <span key={i} role='button' tabIndex={0}
+            className='cursor-pointer font-medium underline decoration-dotted underline-offset-2'
+            style={{ color, textShadow: lit ? `0 0 0.6em ${color}` : undefined }}
+            title='Hover to light up in 3D, click to fly there'
+            onMouseEnter={() => { state.display.blkIdxHover = idxs; state.markDirty(); }}
+            onMouseLeave={() => { state.display.blkIdxHover = null; state.markDirty(); }}
+            onClick={() => flyToBlocks(state, part.blks, undefined, 1.6, undefined, 0.6)}
+            onKeyDown={ev => { if (ev.key === 'Enter') flyToBlocks(state, part.blks, undefined, 1.6, undefined, 0.6); }}
+        >{part.s}</span>;
+    })}</>;
+};
+
+const speeds = [0.25, 0.5, 1, 2, 4];
+const speedLabel = (v: number) => v === 0.25 ? '¼×' : v === 0.5 ? '½×' : `${v}×`;
+
+/** Play the current step: its blocks fill in cell by cell. Slider, speed, scope and auto-advance. */
+const Playback: React.FC<{ state: IProgramState, rt: IModernRuntime }> = ({ state, rt }) => {
+    let a = state.flow.anim;
+    let blocks = animBlocks(state);
+    if (blocks.length === 0) {
+        return null;
+    }
+    let cur = animCursor(state);
+    let t = Math.min(state.flow.token, rt.inputLen - 1);
+    let secs = stepDuration(state) / a.speed;
+    let set = (fn: () => void) => { fn(); saveFlowView(state); state.markDirty(); };
+    let seg = (on: boolean) => clsx('px-2 h-7 text-xs border-y border-r first:border-l first:rounded-l last:rounded-r',
+        on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700');
+
+    let caption: React.ReactNode;
+    if (cur) {
+        let b = cur.blk;
+        let square = b.dimX === DimStyle.T && b.dimY === DimStyle.T;
+        let rowWord = square ? `looking at position ${cur.inner} ("${letter(rt.tokens[cur.inner])}")` : `row ${cur.inner} of ${b.cy}`;
+        caption = <>Computing <b style={{ color: blockColor(b) }}>{b.name}</b> ({cur.blockIdx + 1} of {cur.nBlocks}): position {cur.outer} ("{letter(rt.tokens[cur.outer])}"), {rowWord}.</>;
+    } else if (a.t >= 1) {
+        caption = <>Press play to watch this step's {blocks.length === 1 ? 'block' : `${blocks.length} blocks`} being computed{a.scope === 'token' ? ` for position ${t}` : ''}, one number at a time.</>;
+    }
+
+    return <div className='my-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2'>
+        <div className='flex items-center gap-2'>
+            <button onClick={() => playPause(state)} title='Play or pause (Space)'
+                className='h-8 w-20 shrink-0 rounded bg-blue-600 text-white text-sm hover:bg-blue-700'>
+                {a.playing ? '❚❚ Pause' : a.t >= 1 ? '▶ Play' : '▶ Resume'}
+            </button>
+            <input type='range' min={0} max={1000} value={Math.round(a.t * 1000)} className='flex-1 min-w-0'
+                aria-label='Position in this step'
+                onChange={ev => { a.t = +ev.target.value / 1000; a.playing = false; a.hold = -1; state.markDirty(); }} />
+            <span className='w-12 text-right text-xs tabular-nums text-gray-500'>{(a.t * secs).toFixed(1)}s</span>
+        </div>
+        <div className='text-xs text-gray-700 mt-1.5 min-h-[2.5em]'>{caption}</div>
+        <div className='flex flex-wrap items-center gap-x-4 gap-y-2 mt-1 text-xs text-gray-600'>
+            <div className='flex items-center gap-1.5'>
+                <span>Speed</span>
+                <div className='flex'>{speeds.map(v => <button key={v} className={seg(a.speed === v)} onClick={() => set(() => a.speed = v)}>{speedLabel(v)}</button>)}</div>
+            </div>
+            <div className='flex'>
+                <button className={seg(a.scope === 'all')} onClick={() => set(() => a.scope = 'all')} title='Fill in every position'>All positions</button>
+                <button className={seg(a.scope === 'token')} onClick={() => set(() => a.scope = 'token')} title='Only the followed position (pick it in the panels below)'>Only position {t}</button>
+            </div>
+            <label className='flex items-center gap-1 cursor-pointer select-none'>
+                <input type='checkbox' checked={a.auto} onChange={ev => set(() => a.auto = ev.target.checked)} />
+                Auto-advance
+            </label>
+        </div>
+    </div>;
+};
+
+/** Change the prompt: click a letter to cycle it, add or remove letters. The model reruns at once. */
+const PromptEditor: React.FC<{ state: IProgramState, rt: IModernRuntime }> = ({ state, rt }) => {
+    let c = rt.model.config;
+    let T = c.block_size, V = c.vocab_size;
+    let ids = rt.tokens.slice(0, rt.inputLen);
+    let apply = (next: number[]) => {
+        setModernPrompt(rt, next);
+        state.flow.token = Math.min(state.flow.token, rt.inputLen - 1);
+        state.markDirty();
+    };
+    let btn = 'h-7 px-2 rounded border border-gray-300 bg-white hover:bg-gray-50 text-xs disabled:opacity-40';
+    return <div className='mt-3 pt-2 border-t border-gray-100'>
+        <div className='text-xs font-semibold text-gray-700 mb-1'>Edit the prompt</div>
+        <div className='flex flex-wrap items-center gap-1'>
+            {ids.map((id, i) => <button key={i} title='Click to change this letter'
+                onClick={() => { let n = ids.slice(); n[i] = (id + 1) % V; apply(n); }}
+                className='w-8 h-8 rounded border border-blue-300 bg-blue-50 hover:bg-blue-100 font-mono font-semibold'>{letter(id)}</button>)}
+            <button className={btn} disabled={ids.length >= T} onClick={() => apply([...ids, 0])} title='Add a letter'>+ letter</button>
+            <button className={btn} disabled={ids.length <= 1} onClick={() => apply(ids.slice(0, -1))} title='Remove the last letter'>− letter</button>
+            <button className={btn} onClick={() => apply(ids.map(() => Math.floor(Math.random() * V)))}>Random</button>
+            <button className={btn} onClick={() => apply([2, 1, 0, 1, 1, 2])}>Reset</button>
+        </div>
+        <div className='text-xs text-gray-500 mt-1'>The model was trained on 6 letters. With other lengths its guesses get worse, which is worth seeing too.</div>
+    </div>;
 };

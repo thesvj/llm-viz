@@ -7,13 +7,35 @@ import { IModernLayout } from "../arch/ModernLayout";
 
 export type IFlowPanel = 'rope' | 'tokens' | 'residual' | 'gqa' | 'mask' | 'attention' | 'moe' | 'output' | 'cache';
 
+/** A piece of step text: plain words, or words linked to blocks (hover lights them up, click flies there). */
+export type FlowPart = string | { s: string, blks: IBlkDef[] };
+/** One paragraph: a plain string, or a list of parts. */
+export type FlowText = string | FlowPart[];
+
+/** Link some words to one or more blocks. */
+export const ref = (s: string, ...blks: (IBlkDef | IBlkDef[] | null | undefined)[]): FlowPart =>
+    ({ s, blks: blks.flat().filter((b): b is IBlkDef => !!b) });
+
+/** Tagged template: tx`text ${ref('words', blk)} more text ${n}` gives a paragraph with links. */
+export function tx(strs: TemplateStringsArray, ...vals: (FlowPart | number)[]): FlowPart[] {
+    let out: FlowPart[] = [];
+    strs.forEach((str, i) => {
+        if (str) out.push(str);
+        if (i < vals.length) {
+            let v = vals[i];
+            out.push(typeof v === 'number' ? String(v) : v);
+        }
+    });
+    return out;
+}
+
 export interface IFlowStep {
     id: string;
     group: string;
     title: string;
     blocks: IBlkDef[];
     /** Plain-words explanation, one short paragraph per entry. */
-    text: string[];
+    text: FlowText[];
     /** Shape line, e.g. "11 tokens × 48 channels". */
     shape?: string;
     /** Extra live panel shown under the text. */
@@ -41,7 +63,8 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [layout.idxObj],
         shape: `${T} positions`,
         text: [
-            `The model reads a short list of letters and has to output them in sorted order. Each letter is a token, stored as a number: A = 0, B = 1, C = 2.`,
+            tx`The model reads a short list of letters and has to output them in sorted order. Each letter is a ${ref('token', layout.idxObj)}, stored as a number: A = 0, B = 1, C = 2.`,
+            `Change the letters in the panel below and every block in the 3D view updates.`,
             `The model only ever sees these numbers. Real models split text into pieces from a fixed list: 32,000 entries in Mistral 7B, about 262,000 in Gemma 3. The idea is the same.`,
         ],
         panel: 'tokens',
@@ -51,7 +74,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [layout.idxObj, layout.tokEmbedObj, layout.residual0],
         shape: `${T} tokens × ${C} numbers`,
         text: [
-            `Each token id picks one column of the embedding table (${V} columns of ${C} numbers). That column becomes the token's starting vector.`,
+            tx`Each ${ref('token id', layout.idxObj)} picks one column of the ${ref('embedding table', layout.tokEmbedObj)} (${V} columns of ${C} numbers). That column becomes the token's ${ref('starting vector', layout.residual0)}.`,
             `Nothing here says where a token sits in the list. Position is added later, inside attention, by RoPE.`,
         ],
         vsGpt2: `GPT-2 adds a second, learned position table at this point. Llama-style models have no position table.`,
@@ -61,8 +84,8 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [...layout.residuals, ...layout.lens],
         shape: `${layout.residuals.length} snapshots of ${T} × ${C}`,
         text: [
-            `The ${T} × ${C} block of numbers in the centre column is the residual stream. Every part of every layer reads it and adds its result back onto it.`,
-            `The small ${T} × ${V} block to the right of each snapshot is a "logit lens": the guess the model would make if it stopped there. The panel below lists the same guesses; they usually get clearer layer by layer.`,
+            tx`The ${T} × ${C} block of numbers in the centre column is the ${ref('residual stream', layout.residuals)}. Every part of every layer reads it and adds its result back onto it.`,
+            tx`The small ${T} × ${V} block to the right of each snapshot is a ${ref('"logit lens"', layout.lens)}: the guess the model would make if it stopped there. The panel below lists the same guesses; they usually get clearer layer by layer.`,
         ],
         panel: 'residual',
     });
@@ -74,7 +97,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [b.norm1.rms, b.norm1.gamma, b.norm1.out],
         shape: `${T} × ${C}`,
         text: [
-            `Before attention, each token's vector is rescaled to a standard size: divide by its root-mean-square (the "rms" row), then multiply each channel by a learned weight γ.`,
+            tx`Before attention, each ${ref("token's vector", layer === 0 ? layout.residual0 : layout.blocks[layer - 1].resid2)} is rescaled to a standard size: divide by its ${ref('root-mean-square (the "rms" row)', b.norm1.rms)}, then multiply each channel by a ${ref('learned weight γ', b.norm1.gamma)}. The result is the ${ref('normalized input', b.norm1.out)}.`,
             `This keeps the numbers in a steady range as the layers stack up.`,
         ],
         vsGpt2: `GPT-2 uses LayerNorm, which also subtracts the mean and adds a bias. RMS norm skips both and is cheaper.`,
@@ -84,7 +107,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [...b.heads.flatMap(h => [h.wq, h.q]), ...b.kv.flatMap(k => [k.wk, k.k, k.wv, k.v])],
         shape: `each ${T} × ${A}`,
         text: [
-            `Three weight matrices turn each token vector into a query (what this token is looking for), a key (what it offers) and a value (what it passes on). Each is ${A} numbers per head.`,
+            tx`Three ${ref('weight matrices', b.heads.map(h => h.wq), b.kv.flatMap(k => [k.wk, k.wv]))} turn each token vector into a ${ref('query', b.heads.map(h => h.q))} (what this token is looking for), a ${ref('key', b.kv.map(k => k.k))} (what it offers) and a ${ref('value', b.kv.map(k => k.v))} (what it passes on). Each is ${A} numbers per head.`,
             `This model has ${nH} query heads but only ${nKV} key/value heads. Each key/value head is shared by ${rep} query heads. This is grouped-query attention (GQA).`,
         ],
         panel: 'gqa',
@@ -95,7 +118,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [b.cos, b.sin, ...b.heads.flatMap(h => [h.q, h.qRope]), ...b.kv.flatMap(k => [k.k, k.kRope])],
         shape: `${T} × ${A}`,
         text: [
-            `RoPE turns each pair of channels (j and j + ${A / 2}) of every query and key by an angle. The angle grows with the token's position, so the cos and sin tables change from column to column.`,
+            tx`RoPE turns each pair of channels (j and j + ${A / 2}) of every ${ref('query', b.heads.map(h => h.qRope))} and ${ref('key', b.kv.map(k => k.kRope))} by an angle. The angle grows with the token's position, so the ${ref('cos', b.cos)} and ${ref('sin', b.sin)} tables change from column to column.`,
             `Because both query and key are turned, their dot product depends on how far apart the two tokens are. That is how the model knows order.`,
             `Here channel j is paired with channel j + ${A / 2}, as in the Hugging Face code. Meta's original Llama code pairs neighbouring channels (0 with 1, 2 with 3). Both give the same model; only the channel order differs.`,
         ],
@@ -107,7 +130,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: b.heads.flatMap(h => [h.qRope, h.scores]).concat(b.kv.map(k => k.kRope)),
         shape: `${T} × ${T} per head`,
         text: [
-            `Each score is a query · key dot product, divided by √${A}. A high score means "this token is relevant to me".`,
+            tx`Each ${ref('score', b.heads.map(h => h.scores))} is a ${ref('query', b.heads.map(h => h.qRope))} · ${ref('key', b.kv.map(k => k.kRope))} dot product, divided by √${A}. A high score means "this token is relevant to me".`,
             `A token may only look at itself and earlier tokens. Scores for later tokens (the empty upper triangle) are set to −∞, so they become exactly 0 after softmax.`,
         ],
         panel: 'mask',
@@ -118,7 +141,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: b.heads.flatMap(h => [h.scores, h.probs]),
         shape: `${T} × ${T} per head, rows sum to 1`,
         text: [
-            `Softmax turns each row of scores into weights that are positive and add up to 1. Row t says how much token t takes from each earlier token.`,
+            tx`Softmax turns each row of ${ref('scores', b.heads.map(h => h.scores))} into ${ref('weights', b.heads.map(h => h.probs))} that are positive and add up to 1. Row t says how much token t takes from each earlier token.`,
             `The attention maps below show the same numbers as heat maps, with the letters on both axes.`,
         ],
         panel: 'attention',
@@ -128,7 +151,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [...b.heads.flatMap(h => [h.probs, h.out]), ...b.kv.map(k => k.v)],
         shape: `${T} × ${A} per head`,
         text: [
-            `Each head's output for token t is the weighted sum of the value vectors, using row t of its attention weights.`,
+            tx`Each ${ref("head's output", b.heads.map(h => h.out))} for token t is the weighted sum of the ${ref('value vectors', b.kv.map(k => k.v))}, using row t of its ${ref('attention weights', b.heads.map(h => h.probs))}.`,
             `Heads in the same group read the same shared value block, but each uses its own weights, so their outputs differ.`,
         ],
     });
@@ -137,8 +160,8 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [b.concat, b.wo, b.attnOut, b.resid1],
         shape: `${T} × ${C}`,
         text: [
-            `The ${nH} head outputs are placed side by side (${nH} × ${A} = ${C} numbers) and mixed by one more weight matrix.`,
-            `The result is added onto the residual stream. That sum is the "Attention Residual" block in the centre column.`,
+            tx`The ${nH} head outputs are ${ref('placed side by side', b.concat)} (${nH} × ${A} = ${C} numbers) and mixed by ${ref('one more weight matrix', b.wo)}.`,
+            tx`The ${ref('result', b.attnOut)} is added onto the residual stream. That sum is the ${ref('"Attention Residual"', b.resid1)} block in the centre column.`,
         ],
     });
 
@@ -148,7 +171,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         id: 'norm2', group: gf, title: 'RMS norm',
         blocks: [b.norm2.rms, b.norm2.gamma, b.norm2.out],
         shape: `${T} × ${C}`,
-        text: [`The same rescaling as before attention, with its own γ weights.`],
+        text: [tx`The same rescaling as before attention, with its own ${ref('γ weights', b.norm2.gamma)}.`],
     });
     if (b.mlp) {
         let m = b.mlp;
@@ -157,7 +180,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             blocks: [m.wGate, m.gate, m.wUp, m.up],
             shape: `${T} × ${H}`,
             text: [
-                `Two separate weight matrices widen each token from ${C} to ${H} numbers: the "gate" and the "up" projection.`,
+                tx`Two separate weight matrices widen each token from ${C} to ${H} numbers: the ${ref('"gate"', m.gate)} and the ${ref('"up"', m.up)} projection.`,
                 `Each token is handled on its own here. Tokens only exchange information in attention.`,
             ],
         });
@@ -166,7 +189,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             blocks: [m.gate, m.up, m.act],
             shape: `${T} × ${H}`,
             text: [
-                `The gate goes through SiLU (x · sigmoid(x)), which keeps positive values and squashes negative ones towards 0. It is then multiplied, number by number, with the up projection.`,
+                tx`The ${ref('gate', m.gate)} goes through SiLU (x · sigmoid(x)), which keeps positive values and squashes negative ones towards 0. It is then multiplied, number by number, with the ${ref('up projection', m.up)}, giving the ${ref('SwiGLU block', m.act)}.`,
                 `So the gate decides how much of each "up" channel gets through.`,
             ],
             vsGpt2: `GPT-2 uses one projection and GELU. SwiGLU uses two projections and a multiply, which trains better for the same cost.`,
@@ -176,7 +199,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             blocks: [m.act, m.wDown, m.down, b.resid2],
             shape: `${T} × ${C}`,
             text: [
-                `A third matrix shrinks the ${H} numbers back to ${C}. The result is added onto the residual stream ("MLP Residual").`,
+                tx`A ${ref('third matrix', m.wDown)} shrinks the ${H} numbers back to ${C}. The ${ref('result', m.down)} is added onto the residual stream (${ref('"MLP Residual"', b.resid2)}).`,
             ],
         });
     } else if (b.moe) {
@@ -186,7 +209,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             blocks: [m.wRouter, m.logits, m.probs],
             shape: `${T} × ${E}`,
             text: [
-                `This layer has ${E} separate feed-forward networks, called experts. A small router matrix gives each token one score per expert, and softmax turns the scores into probabilities.`,
+                tx`This layer has ${E} separate feed-forward networks, called ${ref('experts', m.experts.flatMap(ex => [ex.gate, ex.up, ex.act, ex.down]))}. A small ${ref('router matrix', m.wRouter)} gives each token ${ref('one score per expert', m.logits)}, and softmax turns the scores into ${ref('probabilities', m.probs)}.`,
             ],
             panel: 'moe',
             newer: `Newer MoE models use many small experts. DeepSeek-V3 has 256 per layer and each token uses 8. It also has one shared expert that every token always uses. gpt-oss-20b has 32 experts and uses 4. The tiny model here follows the older Mixtral style: a few large experts and no shared expert.`,
@@ -196,7 +219,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             blocks: [m.probs, m.weights],
             shape: `${T} × ${E}, ${K} non-zero per token`,
             text: [
-                `Each token keeps only its ${K} highest-scoring experts. Their probabilities are rescaled to add up to 1, and the other ${E - K} experts get weight 0.`,
+                tx`Each token keeps only its ${K} highest-scoring experts. Their ${ref('probabilities', m.probs)} are ${ref('rescaled to add up to 1', m.weights)}, and the other ${E - K} experts get weight 0.`,
                 `So each token runs only ${K} of the ${E} experts. The model has many weights but uses only some of them per token.`,
             ],
             panel: 'moe',
@@ -216,8 +239,8 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             blocks: [m.weights, ...m.experts.map(ex => ex.down), m.out, b.resid2],
             shape: `${T} × ${C}`,
             text: [
-                `For each token: output = w₁ · (first chosen expert) + w₂ · (second chosen expert). The other experts are multiplied by 0.`,
-                `The result is added onto the residual stream ("MoE Residual").`,
+                tx`For each token: ${ref('output', m.out)} = ${ref('w₁', m.weights)} · (first chosen expert) + ${ref('w₂', m.weights)} · (second chosen expert). The other experts are multiplied by 0.`,
+                tx`The result is added onto the residual stream (${ref('"MoE Residual"', b.resid2)}).`,
             ],
             panel: 'moe',
         });
@@ -237,14 +260,14 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         id: 'normf', group: 'Output', title: 'Final RMS norm',
         blocks: [layout.normF.rms, layout.normF.gamma, layout.normF.out],
         shape: `${T} × ${C}`,
-        text: [`One last rescaling of the residual stream before the output.`],
+        text: [tx`One last ${ref('rescaling', layout.normF.out)} of the ${ref('residual stream', layout.residuals[layout.residuals.length - 1])} before the output.`],
     });
     steps.push({
         id: 'logits', group: 'Output', title: 'Logits',
         blocks: [layout.lmHead, layout.logits],
         shape: `${T} × ${V}`,
         text: [
-            `The LM head matrix turns each token's ${C} numbers into ${V} scores, one per possible next token. These raw scores are called logits.`,
+            tx`The ${ref('LM head matrix', layout.lmHead)} turns each token's ${ref(`${C} numbers`, layout.normF.out)} into ${V} scores, one per possible next token. These raw scores are called ${ref('logits', layout.logits)}.`,
         ],
     });
     steps.push({
@@ -252,7 +275,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         blocks: [layout.logits, layout.logitsSoftmax],
         shape: `${T} × ${V}`,
         text: [
-            `Softmax turns the logits into probabilities. Column t is the model's guess for the token after position t.`,
+            tx`Softmax turns the ${ref('logits', layout.logits)} into ${ref('probabilities', layout.logitsSoftmax)}. Column t is the model's guess for the token after position t.`,
             `Temperature divides the logits before softmax. Below 1 makes the top choice stronger, above 1 flattens the guesses. Try the slider.`,
         ],
         panel: 'output',

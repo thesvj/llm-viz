@@ -52,7 +52,8 @@ export function expertsUsed(state: IProgramState): number[] {
     return Array.from({ length: E }, (_, e) => e).filter(e => w[t * E + e] > 0);
 }
 
-export function goToStep(state: IProgramState, idx: number) {
+/** Go to a step. It opens fully computed, unless play is set (then it starts empty and plays). */
+export function goToStep(state: IProgramState, idx: number, play = false) {
     let steps = flowSteps(state);
     if (steps.length === 0) {
         return;
@@ -60,6 +61,10 @@ export function goToStep(state: IProgramState, idx: number) {
     idx = Math.max(0, Math.min(steps.length - 1, idx));
     state.flow.step = idx;
     state.display.pinned = null;
+    let a = state.flow.anim;
+    a.t = play ? 0 : 1;
+    a.playing = play;
+    a.hold = -1;
     flyToBlocks(state, flowFocusBlocks(state), undefined, 1.3, undefined, 1.2);
     saveFlowView(state);
     state.markDirty();
@@ -70,7 +75,8 @@ const storeKey = 'llmviz.view';
 /** Remember the model and guide position across page reloads (per browser; failures are ignored). */
 export function saveFlowView(state: IProgramState) {
     try {
-        localStorage.setItem(storeKey, JSON.stringify({ mode: state.modelMode, step: state.flow.step, layer: state.flow.layer }));
+        localStorage.setItem(storeKey, JSON.stringify({ mode: state.modelMode, step: state.flow.step, layer: state.flow.layer,
+            speed: state.flow.anim.speed, scope: state.flow.anim.scope, auto: state.flow.anim.auto }));
     } catch { /* storage unavailable */ }
 }
 
@@ -84,6 +90,10 @@ export function restoreFlowView(state: IProgramState) {
             state.flow.layer = Math.max(0, Math.min(rt.model.config.n_layer - 1, v.layer | 0));
             state.flow.token = rt.inputLen - 1;
             state.flow.step = Math.max(0, v.step | 0);
+            let a = state.flow.anim;
+            if ([0.25, 0.5, 1, 2, 4].includes(v.speed)) a.speed = v.speed;
+            if (v.scope === 'all' || v.scope === 'token') a.scope = v.scope;
+            a.auto = v.auto === true;
             return true;
         }
     } catch { /* storage unavailable or bad data */ }

@@ -14,6 +14,7 @@ import { archPresets, countParams } from "./arch/ArchPresets";
 import { genModernLayout, IModernLayout } from "./arch/ModernLayout";
 import { drawModernLabels } from "./arch/ModernLabels";
 import { flowActive, flowFocusBlocks } from "./flow/flowState";
+import { defaultFlowAnim, IFlowAnim, runFlowAnim } from "./flow/flowAnim";
 import { applyFocus, applyValueRanges, defaultVizSettings, IVizSettings } from "./VizSettings";
 import { drawText, IFontAtlasData, IFontOpts, measureText } from "./render/fontRender";
 import { initRender, IRenderState, IRenderView, renderModel, resetRenderBuffers } from "./render/modelRender";
@@ -74,6 +75,7 @@ export interface IFlowState {
     layer: number;       // which layer the guide walks through
     token: number;       // the token position the guide follows (MoE experts, logit lens, cache)
     temperature: number; // sampling temperature for "Next token"
+    anim: IFlowAnim;     // step playback
 }
 
 export interface IModelExample {
@@ -251,7 +253,7 @@ export function initProgramState(canvasEl: HTMLCanvasElement, fontAtlasData: IFo
         viz: defaultVizSettings(),
         modelMode: 'gpt2',
         modern: {},
-        flow: { step: 0, layer: 0, token: 0, temperature: 1 },
+        flow: { step: 0, layer: 0, token: 0, temperature: 1, anim: defaultFlowAnim() },
         display: {
             tokenColors: null,
             tokenIdxColors: null,
@@ -352,11 +354,16 @@ export function runProgram(view: IRenderView, state: IProgramState) {
 
     // manageMovement(state, view);
     runMouseHitTesting(state);
+    if (flowActive(state)) {
+        runFlowAnim(state, view);
+    }
     if (state.viz.focus) {
         let hover = state.display.hoverTarget as IHoverTarget | null; // set by runMouseHitTesting
         let pinnedCube = state.display.pinned ? state.layout.cubes[state.display.pinned.cubeIdx] ?? null : null;
         let target = hover?.mainCube ?? pinnedCube;
-        applyFocus(state.layout, target ?? (flowActive(state) ? flowFocusBlocks(state) : null));
+        // words linked in the guide text keep their blocks lit even when they are not part of the step
+        let linked = (state.display.blkIdxHover ?? []).map(i => state.layout.cubes[i]).filter(b => b);
+        applyFocus(state.layout, target ?? (flowActive(state) ? [...flowFocusBlocks(state), ...linked] : null));
     }
     drawBlockInfo(state); // after focus, so dimmed blocks get no name tag
     state.render.sharedRender.activePhase = RenderPhase.Opaque;

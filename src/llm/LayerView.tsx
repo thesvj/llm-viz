@@ -26,6 +26,7 @@ import { AttentionPanel } from './components/AttentionPanel';
 import { explainCell } from './CellExplain';
 import { loadModernModels } from './arch/ModernModels';
 import { flowActive, goToStep, restoreFlowView } from './flow/flowState';
+import { playPause } from './flow/flowAnim';
 
 async function fetchTensorData(url: string): Promise<ITensorSet> {
     let resp = await fetch(assetUrl(url));
@@ -72,7 +73,16 @@ export function LayerView() {
         let ps = canvasRender.progState;
         if (flowActive(ps)) {
             // step-by-step guide for the modern models
-            if (ev.key === ' ' || key === 'n' || key === ']') {
+            if (ev.key === ' ') {
+                // play or pause the step; once it has finished (or cannot play), go to the next one
+                let a = ps.flow.anim;
+                if (!(a.playing || a.t < 1) || !playPause(ps)) {
+                    goToStep(ps, ps.flow.step + 1);
+                }
+                ev.preventDefault();
+                return;
+            }
+            if (key === 'n' || key === ']') {
                 goToStep(ps, ps.flow.step + 1);
                 ev.preventDefault();
                 return;

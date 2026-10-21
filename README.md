@@ -13,7 +13,10 @@ A 3D view of small language models running in the browser. You can follow every 
 
 ## What you can do
 
-- Step through the tiny Llama and MoE with a guide on the left. Use Space or N to go forward and P to go back.
+- Step through the tiny Llama and MoE with a guide on the left. Use N to go forward and P to go back.
+- Press Play on a step to watch its blocks fill in one number at a time, while the inspector shows how the current number is made. You can drag the timeline, change the speed, follow a single position, and let the guide move on by itself.
+- Hover a coloured word in the guide to light up its block in 3D, or click it to fly there.
+- Change the prompt letters and watch every block and guess update.
 - Hover any block to see how one of its numbers is computed.
 - See the model's guess at every layer (logit lens), the RoPE angles, the attention maps and the router choices.
 - Generate one token at a time and watch which keys and values are reused from the cache.

@@ -5,6 +5,8 @@ import { explainCell } from '../CellExplain';
 import { DimStyle, dimStyleText } from '../walkthrough/WalkthroughTools';
 import { IBlkDef } from '../GptModelLayout';
 import { Vec3 } from '@/src/utils/vector';
+import { animCursor } from '../flow/flowAnim';
+import { flowActive } from '../flow/flowState';
 
 const dimMeaning: Partial<Record<DimStyle, string>> = {
     [DimStyle.T]: 'token position',
@@ -37,6 +39,11 @@ export function getInspectTarget(state: ReturnType<typeof useProgramState>): { b
     }
     if (pinned && state.layout.cubes[pinned.cubeIdx]) {
         return { blk: state.layout.cubes[pinned.cubeIdx], idx: pinned.idx, isPinned: true };
+    }
+    // during guide playback, follow the number being computed
+    let cur = flowActive(state) ? animCursor(state) : null;
+    if (cur) {
+        return { blk: cur.blk, idx: cur.idx, isPinned: false };
     }
     return null;
 }
