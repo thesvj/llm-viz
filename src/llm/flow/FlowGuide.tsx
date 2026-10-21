@@ -65,6 +65,10 @@ export const FlowGuide: React.FC = () => {
                     <div className='font-semibold text-blue-900 text-xs uppercase tracking-wide mb-0.5'>Compared with GPT-2</div>
                     {step.vsGpt2}
                 </div>}
+                {step.newer && <div className='my-3 border-l-4 border-amber-300 bg-amber-50 px-3 py-2 text-sm'>
+                    <div className='font-semibold text-amber-900 text-xs uppercase tracking-wide mb-0.5'>In newer models</div>
+                    {step.newer}
+                </div>}
                 {step.panel && <div className='mt-3'><Panel state={state} rt={rt} layout={layout} step={step} /></div>}
                 <div className='mt-4 pt-2 border-t border-gray-100 text-xs text-gray-500'>
                     Hover any block to see how one number is computed. Keys: <Kbd>Space</Kbd> or <Kbd>N</Kbd> next, <Kbd>P</Kbd> back.

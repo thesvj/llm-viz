@@ -21,6 +21,10 @@ export interface IModernConfig {
     tied?: boolean;           // LM head shares the token embedding matrix
     qk_norm?: boolean;        // RMS norm on each Q and K head (Qwen3)
     sliding_window?: number;  // each token attends only to this many previous tokens (Mistral)
+    local_every?: number;     // with sliding_window: only some layers are local; 2 = every other layer (gpt-oss)
+    bias?: boolean;           // attention, router and expert layers have bias vectors (gpt-oss)
+    sinks?: boolean;
+    active_note?: string;     // shown under the parameter count when the lab counts "active" differently          // one learned "sink" score per head that can soak up attention (gpt-oss)
 }
 
 export interface ITensor {

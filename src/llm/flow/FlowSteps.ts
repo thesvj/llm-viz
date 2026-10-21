@@ -20,6 +20,8 @@ export interface IFlowStep {
     panel?: IFlowPanel;
     /** How this differs from GPT-2, when it does. */
     vsGpt2?: string;
+    /** What newer real models do differently from the tiny model shown. */
+    newer?: string;
 }
 
 export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[] {
@@ -40,7 +42,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         shape: `${T} positions`,
         text: [
             `The model reads a short list of letters and has to output them in sorted order. Each letter is a token, stored as a number: A = 0, B = 1, C = 2.`,
-            `The model only ever sees these numbers. Real models split text into pieces from a list of 30,000 to 150,000 entries, but the idea is the same.`,
+            `The model only ever sees these numbers. Real models split text into pieces from a fixed list: 32,000 entries in Mistral 7B, about 262,000 in Gemma 3. The idea is the same.`,
         ],
         panel: 'tokens',
     });
@@ -95,6 +97,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
         text: [
             `RoPE turns each pair of channels (j and j + ${A / 2}) of every query and key by an angle. The angle grows with the token's position, so the cos and sin tables change from column to column.`,
             `Because both query and key are turned, their dot product depends on how far apart the two tokens are. That is how the model knows order.`,
+            `Here channel j is paired with channel j + ${A / 2}, as in the Hugging Face code. Meta's original Llama code pairs neighbouring channels (0 with 1, 2 with 3). Both give the same model; only the channel order differs.`,
         ],
         panel: 'rope',
         vsGpt2: `GPT-2 adds position once, at the input. RoPE adds it in every layer, and only to queries and keys, not values.`,
@@ -108,6 +111,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             `A token may only look at itself and earlier tokens. Scores for later tokens (the empty upper triangle) are set to −∞, so they become exactly 0 after softmax.`,
         ],
         panel: 'mask',
+        newer: `Many newer models mix two kinds of attention layer. A local layer lets each token see only recent tokens: 128 in gpt-oss, 1,024 in Gemma 3. A full layer sees every earlier token, as here. gpt-oss alternates them one to one, and Gemma 3 uses five local layers per full one. This keeps memory small for long texts.`,
     });
     steps.push({
         id: 'softmax', group: ga, title: 'Attention weights',
@@ -185,6 +189,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
                 `This layer has ${E} separate feed-forward networks, called experts. A small router matrix gives each token one score per expert, and softmax turns the scores into probabilities.`,
             ],
             panel: 'moe',
+            newer: `Newer MoE models use many small experts. DeepSeek-V3 has 256 per layer and each token uses 8. It also has one shared expert that every token always uses. gpt-oss-20b has 32 experts and uses 4. The tiny model here follows the older Mixtral style: a few large experts and no shared expert.`,
         });
         steps.push({
             id: 'topk', group: gf, title: `Pick the top ${K} experts`,
@@ -261,6 +266,7 @@ export function buildFlowSteps(layout: IModernLayout, layer: number): IFlowStep[
             `The 3D view shows this layer's keys and values. After a step, the reused columns are outlined in blue ("cached") and the one new column in orange ("new").`,
         ],
         panel: 'cache',
+        newer: `DeepSeek-V3 shrinks this cache further with multi-head latent attention. It stores one short compressed vector per token, plus a small part for RoPE, and expands it back into keys and values when needed.`,
     });
 
     return steps;

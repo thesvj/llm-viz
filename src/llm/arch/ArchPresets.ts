@@ -8,7 +8,8 @@ export interface IArchPreset {
     title: string;
     sub: string;          // one line: what is special about it
     config: IModernConfig;
-    published: { total: number, active?: number }; // published parameter counts
+    /** Published parameter counts. activeNoEmbed: the published active count leaves out the input embedding (a lookup, not a calculation). */
+    published: { total: number, active?: number, activeNoEmbed?: boolean };
 }
 
 function cfg(c: Partial<IModernConfig> & Pick<IModernConfig, 'vocab_size' | 'n_embd' | 'n_layer' | 'n_head' | 'n_kv_head' | 'n_hidden'>): IModernConfig {
@@ -43,17 +44,26 @@ export const archPresets: IArchPreset[] = [{
     sub: '32 layers, 8 experts per layer, each token uses 2 of them',
     config: cfg({ vocab_size: 32000, n_embd: 4096, n_layer: 32, n_head: 32, n_kv_head: 8, n_hidden: 14336, n_expert: 8, top_k: 2, rope_theta: 1000000 }),
     published: { total: 46.7e9, active: 12.9e9 },
+}, {
+    id: 'gpt-oss-20b',
+    title: 'gpt-oss-20b',
+    sub: '24 layers, 32 experts per layer (each token uses 4), local and full attention layers alternate',
+    config: cfg({ vocab_size: 201088, n_embd: 2880, n_layer: 24, n_head: 64, n_kv_head: 8, head_dim: 64, n_hidden: 2880, n_expert: 32, top_k: 4, rope_theta: 150000, sliding_window: 128, local_every: 2, bias: true, sinks: true,
+        active_note: 'OpenAI quotes 3.6 billion active parameters because it leaves out the input embedding, which is a lookup rather than a calculation.' }),
+    published: { total: 20.91e9, active: 3.61e9, activeNoEmbed: true },
 }];
 
 /** Parameter count of a Llama-style model. `active` counts only the top-k experts each token uses. */
 export function countParams(c: IModernConfig): { total: number, active: number } {
     let C = c.n_embd, A = c.head_dim ?? C / c.n_head, H = c.n_hidden, V = c.vocab_size;
-    let attn = C * c.n_head * A + 2 * C * c.n_kv_head * A + c.n_head * A * C + (c.qk_norm ? 2 * A : 0);
+    let attn = C * c.n_head * A + 2 * C * c.n_kv_head * A + c.n_head * A * C + (c.qk_norm ? 2 * A : 0)
+        + (c.bias ? c.n_head * A + 2 * c.n_kv_head * A + C : 0) + (c.sinks ? c.n_head : 0);
     let norms = 2 * C;
-    let expert = 3 * C * H; // gate, up, down
+    let expert = 3 * C * H + (c.bias ? 2 * H + C : 0); // gate, up, down
     let E = c.n_expert ?? 0, K = c.top_k ?? 0;
-    let mlpTotal = E > 0 ? E * expert + C * E : expert;
-    let mlpActive = E > 0 ? K * expert + C * E : expert;
+    let router = C * E + (c.bias ? E : 0);
+    let mlpTotal = E > 0 ? E * expert + router : expert;
+    let mlpActive = E > 0 ? K * expert + router : expert;
     let embed = V * C * (c.tied ? 1 : 2) + C; // + final norm
     return {
         total: embed + c.n_layer * (attn + norms + mlpTotal),

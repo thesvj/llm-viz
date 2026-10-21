@@ -4,6 +4,8 @@ let fail = 0;
 for (let p of archPresets) {
     let n = countParams(p.config);
     let err = Math.abs(n.total - p.published.total) / p.published.total;
+    // some labs leave the input embedding out of the active count
+    if (p.published.activeNoEmbed) n.active -= p.config.vocab_size * p.config.n_embd;
     let errA = p.published.active ? Math.abs(n.active - p.published.active) / p.published.active : 0;
     let ok = err < 0.01 && errA < 0.01;
     if (!ok) fail++;

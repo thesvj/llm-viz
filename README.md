@@ -1,41 +1,44 @@
 # LLM visualization
 
-Interactive 3D view of a small language model running inference.
+A 3D view of small language models running in the browser. You can follow every number from the input tokens to the next-token guess.
 
-This is a fork of [Brendan Bycroft's llm-viz](https://github.com/bbycroft/llm-viz).
-The original personal homepage and photo are not included.
+**Live site:** https://thesvj.github.io/llm-viz/llm
 
-**License:** MIT (see [`LICENSE`](LICENSE)). Copyright (c) 2023-2026 Brendan Bycroft.
-Third-party assets (fonts, RISC-V tests, and so on) keep their own licenses.
+## Models
 
-## Projects
+- **nano-gpt**: a GPT-2 style model with 85,584 parameters that sorts the letters A, B and C. It comes with the original step-by-step walkthrough.
+- **tiny Llama**: the same task in Llama style, with RMS norm, RoPE, grouped-query attention and SwiGLU. It has 76,656 parameters.
+- **tiny MoE**: tiny Llama with a mixture of experts. Each layer has 4 experts and each token uses 2. It has 132,528 parameters.
+- **Real model shapes**: GPT-2 Small and XL, GPT-3, Llama 3.2 1B, Qwen3 8B, Mistral 7B, Mixtral 8x7B and gpt-oss-20b. They are drawn at full size without weights. Their parameter counts match the published totals within 1%.
 
-The main projects are:
-* LLM Visualization: 3D interactive model of a GPT-style LLM network running inference.
-* [WIP] CPU Simulation: A 2D digital schematic editor with full a execution model, showcasing a simple
-  RISC-V based CPU
+## What you can do
 
-### LLM Visualization
+- Step through the tiny Llama and MoE with a guide on the left. Use Space or N to go forward and P to go back.
+- Hover any block to see how one of its numbers is computed.
+- See the model's guess at every layer (logit lens), the RoPE angles, the attention maps and the router choices.
+- Generate one token at a time and watch which keys and values are reused from the cache.
+- Read short notes on where newer models differ: local attention layers, shared experts and compressed key/value caches.
 
-This project displays a 3D model of a working implementation of a GPT-style network. That
-is, the network topology that's used in OpenAI's GPT-2, GPT-3, (and maybe GPT-4).
-
-The first network displayed with working weights is a tiny such network, which sorts a small list
-of the letters A, B, and C. This is the demo example model from Andrej Karpathy's
-[minGPT](https://github.com/karpathy/minGPT) implementation.
-
-The renderer also supports visualizing arbitrary sized networks, and works with the smaller gpt2
-size, although the weights aren't downloaded (it's 100's of MBs).
-
-### CPU Simulation (WIP; not exposed yet!)
-
-This project runs 2D schematic digital circuits, with a fully fledged editor. The intent is to
-add a number of walkthroughs, showing things such as:
-  * how a simple RISC-V CPU is constructed
-  * the constituent parts down to gate level: instruction decode, ALU, add, etc
-  * higher level CPU ideas, like various levels of pipelining, caching, etc
-
-## Running Locally
+## Running locally
 
 1. Install dependencies: `yarn`
-1. Start the dev server: `yarn dev`
+2. Start the dev server: `yarn dev`
+3. Open http://localhost:3002/llm
+
+## Checks
+
+- `node tools/check_modern_forward.ts`: the browser maths matches PyTorch for both tiny models.
+- `npx tsx tools/check_presets.ts`: the real-model parameter counts match the published ones.
+- `tools/train_tiny_modern.py` trains the tiny Llama and MoE and exports their weights.
+
+## Credits
+
+This project builds on [llm-viz](https://github.com/bbycroft/llm-viz) by [Brendan Bycroft](https://github.com/bbycroft). He made the 3D renderer, the GPT-2 walkthrough and the CPU simulator in `src/cpu`.
+
+The nano-gpt model and its sorting task come from Andrej Karpathy's [minGPT](https://github.com/karpathy/minGPT).
+
+The real-model shapes come from each model's published `config.json` on Hugging Face.
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). Copyright (c) 2023-2026 Brendan Bycroft. Third-party assets such as fonts and RISC-V tests keep their own licenses.
