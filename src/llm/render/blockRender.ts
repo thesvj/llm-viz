@@ -29,6 +29,7 @@ export function initBlockRender(ctx: IGLContext | null) {
         layout(row_major) uniform mat4x2 u_accessMtx;
         uniform float u_accessTexChannel;
         uniform float u_accessTexScale;
+        uniform float u_palette; // 0 = classic, 1 = diverging blue-white-red
     };`;
 
     let numBlocks = 1024;
@@ -167,7 +168,7 @@ export function initBlockRender(ctx: IGLContext | null) {
                 vec3 texBaseColor = mix(baseColor, vec3(0.5, 0.5, 0.5), 0.8);
 
                 vec3 d = fract(v_blockPos) - 0.5;
-                float r2 = 0.3*0.3;
+                float r2 = 0.38*0.38; // value dot radius (cell = 1)
                 bool insideX = d.y * d.y + d.z * d.z < r2;
                 bool insideY = d.x * d.x + d.z * d.z < r2;
                 bool insideZ = d.x * d.x + d.y * d.y < r2;
@@ -180,10 +181,22 @@ export function initBlockRender(ctx: IGLContext | null) {
 
                     float weight = clamp(abs(val), 0.0, 1.0);
 
-                    vec3 negColor = vec3(0.0, 0.0, 0.0);
-                    vec3 posColor = u_baseColor.rgb; // vec3(0.0, 1.0, 0.0);
-                    vec3 zeroColor = vec3(0.5, 0.5, 0.5);
-                    texBaseColor = mix(mix(zeroColor, negColor, weight), mix(zeroColor, posColor, weight), step(0.0, val));
+                    if (u_palette > 0.5) {
+                        // ColorBrewer RdBu: zero = near white, |v| = 1 -> deep red (+) / deep blue (-)
+                        vec3 zeroC = vec3(0.969, 0.969, 0.969);
+                        vec3 posMid = vec3(0.957, 0.647, 0.510);
+                        vec3 posEnd = vec3(0.698, 0.094, 0.169);
+                        vec3 negMid = vec3(0.573, 0.773, 0.871);
+                        vec3 negEnd = vec3(0.129, 0.400, 0.675);
+                        vec3 mid = val >= 0.0 ? posMid : negMid;
+                        vec3 end = val >= 0.0 ? posEnd : negEnd;
+                        texBaseColor = weight < 0.5 ? mix(zeroC, mid, weight * 2.0) : mix(mid, end, weight * 2.0 - 1.0);
+                    } else {
+                        vec3 negColor = vec3(0.0, 0.0, 0.0);
+                        vec3 posColor = u_baseColor.rgb;
+                        vec3 zeroColor = vec3(0.5, 0.5, 0.5);
+                        texBaseColor = mix(mix(zeroColor, negColor, weight), mix(zeroColor, posColor, weight), step(0.0, val));
+                    }
                 }
 
                 baseColor = mix(texBaseColor, baseColor, t);
@@ -193,7 +206,7 @@ export function initBlockRender(ctx: IGLContext | null) {
                 vec3 block16 = v_blockPos / 16.0;
                 vec3 pxPerBlock16 = 1.0 / fwidth(block16);
                 float strength16 = min(min(pxPerBlock16.x, pxPerBlock16.y), pxPerBlock16.z);
-                vec3 colorEdge = vec3(1.0, 1.0, 1.0);
+                vec3 colorEdge = u_palette > 0.5 ? mix(u_baseColor.rgb, vec3(1.0), 0.15) : vec3(1.0, 1.0, 1.0);
                 vec3 color16 = vec3(1.0, 1.0, 1.0) * 0.7;
                 vec3 color256 = vec3(1.0, 1.0, 1.0);
 
@@ -265,6 +278,7 @@ export function initBlockRender(ctx: IGLContext | null) {
 
     return {
         gl,
+        palette: 1, // 0 = classic, 1 = diverging; set from view settings each frame
         cubeGeom,
         shader,
         simpleShader,
@@ -439,6 +453,7 @@ export function renderAllBlocks(blockRender: IBlockRender, layout: IModelLayout,
             } else {
                 blockBuf[baseOff + 9] = 0.0;
             }
+            blockBuf[baseOff + 10] = blockRender.palette;
             blockAccessUbo.usedEls += 1;
         }
         uploadFloatBuffer(gl, blockRender.blockAccessUbo);

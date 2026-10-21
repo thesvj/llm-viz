@@ -5,6 +5,7 @@ import { drawModelCard } from "./components/ModelCard";
 import { IGptModelLink, IGpuGptModel, IModelShape } from "./GptModel";
 import { genGptModelLayout, IBlkDef, IGptModelLayout } from "./GptModelLayout";
 import { ILayoutBase } from "./LayoutBase";
+import { applyFocus, applyValueRanges, defaultVizSettings, IVizSettings } from "./VizSettings";
 import { drawText, IFontAtlasData, IFontOpts, measureText } from "./render/fontRender";
 import { initRender, IRenderState, IRenderView, renderModel, resetRenderBuffers } from "./render/modelRender";
 import { beginQueryAndGetPrevMs, endQuery } from "./render/queryManager";
@@ -44,6 +45,7 @@ export interface IProgramState {
     jsGptModel: IGptModelLink | null;
     movement: IMovementInfo;
     display: IDisplayState;
+    viz: IVizSettings;
     pageLayout: ILayout;
     markDirty: () => void;
 }
@@ -203,6 +205,7 @@ export function initProgramState(canvasEl: HTMLCanvasElement, fontAtlasData: IFo
             depth: 1,
             cameraLerp: null,
          },
+        viz: defaultVizSettings(),
         display: {
             tokenColors: null,
             tokenIdxColors: null,
@@ -247,6 +250,10 @@ export function runProgram(view: IRenderView, state: IProgramState) {
     // generate the base model, incorporating the gpu-side model if available
     state.layout = genGptModelLayout(state.shape, state.jsGptModel);
 
+    // real value ranges per block (legend) and, in 'auto' mode, honest per-block colour scales
+    applyValueRanges(state.layout, state.viz, new Set([state.layout.idxObj]));
+    state.render.blockRender.palette = state.viz.palette === 'diverging' ? 1 : 0;
+
     // @TODO: handle different models in the same scene.
     // Maybe need to copy a lot of different things like the entire render state per model?
     for (let example of state.examples) {
@@ -289,6 +296,10 @@ export function runProgram(view: IRenderView, state: IProgramState) {
 
     // manageMovement(state, view);
     runMouseHitTesting(state);
+    if (state.viz.focus) {
+        let hover = state.display.hoverTarget as IHoverTarget | null; // set by runMouseHitTesting
+        applyFocus(state.layout, hover?.mainCube ?? null);
+    }
     state.render.sharedRender.activePhase = RenderPhase.Opaque;
     if (state.layout.kind === 'gpt2') {
         drawBlockLabels(state.render, gptLayout(state));

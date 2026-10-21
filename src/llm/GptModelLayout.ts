@@ -132,6 +132,7 @@ export interface IBlkAccess {
     // next 4 floats = texY row. See getBlockValueAtIdx / blockRender u_accessMtx.
     mat: Mat4f;
     disable?: boolean;
+    range?: number; // real 99th-percentile |value| of this block (set each frame); shown in the legend
 }
 
 interface IBlkAccessDefArgs {
